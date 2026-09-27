@@ -281,3 +281,77 @@ class Servizio:
                 }
             )
         return righe
+
+    # --- decisioni
+
+    def _foto_decidibile(self, giro_id: int, soprannome: str, versione: int) -> Foto:
+        corrente = self._store.foto(giro_id, soprannome)
+        if corrente is None:
+            raise NonTrovato("foto inesistente")
+        if corrente.versione != versione:
+            raise Conflitto("foto sostituita: nel frattempo ne è arrivata una nuova")
+        if corrente.stato != regole.IN_ATTESA:
+            raise Conflitto("la foto è già stata decisa")
+        return corrente
+
+    def decidi(
+        self, giro_id: int, soprannome: str, versione: int, esito: str, motivo: str | None
+    ) -> Foto:
+        """Accetta la foto o ne chiede un'altra. Vale solo sulla versione vista."""
+        self._foto_decidibile(giro_id, soprannome, versione)
+        try:
+            pulito = regole.verifica_esito(esito, motivo)
+        except regole.RegolaViolata as e:
+            raise RichiestaErrata(str(e)) from e
+        if not self._store.decidi(giro_id, soprannome, versione, esito, pulito):
+            raise Conflitto("foto sostituita o già decisa")
+        decisa = self._store.foto(giro_id, soprannome)
+        assert decisa is not None
+        return decisa
+
+    def dopo_decisione(self, decisa: Foto) -> None:
+        """Il push al giocatore e il messaggio del bot aggiornato."""
+        if decisa.stato == regole.ACCETTATA:
+            testo = TESTO_ACCETTATA
+            didascalia = f"✅ Selfie di {decisa.soprannome}: accettata"
+        else:
+            testo = f"{TESTO_ALTRA_FOTO}: {decisa.motivo}" if decisa.motivo else TESTO_ALTRA_FOTO
+            didascalia = f"🔄 Selfie di {decisa.soprannome}: chiesta un'altra foto"
+            if decisa.motivo:
+                didascalia += f" — {decisa.motivo}"
+        self._notifiche.a_persona(decisa.soprannome, TITOLO, testo, ttl=TTL_ESITO)
+        if decisa.messaggio_bot is not None:
+            self._modifica(decisa.messaggio_bot, didascalia)
+
+    def aspetta_motivo(self, giro_id: int, soprannome: str, versione: int) -> None:
+        """«Altro motivo…»: chiede il testo ad Alberto. I pulsanti restano, così
+        può ancora cambiare idea; una decisione presa li rende innocui."""
+        corrente = self._foto_decidibile(giro_id, soprannome, versione)
+        domanda = self._telegram.chiedi_risposta(
+            self._imp.admin_telegram_id,
+            f"{pulsanti.DOMANDA_MOTIVO} {soprannome}, rispondendo a questo messaggio "
+            f"(al massimo {regole.MOTIVO_MASSIMO} caratteri).",
+        )
+        if not self._store.imposta_attesa_motivo(giro_id, soprannome, versione, domanda):
+            raise Conflitto("foto sostituita o già decisa")
+        if corrente.messaggio_bot is not None:
+            self._modifica(
+                corrente.messaggio_bot,
+                f"✏️ Selfie di {soprannome}: aspetto il motivo…",
+                pulsanti.tastiera(giro_id, soprannome, versione, self._imp.motivi),
+            )
+
+    def motivo_scritto(self, risposta_a: int, testo: str | None) -> Foto | None:
+        """Il testo che Alberto ha scritto in risposta alla domanda `risposta_a`.
+
+        `None` se quella domanda non aspetta più niente (foto sostituita o già
+        decisa). `regole.RegolaViolata` se il testo va riscritto: la foto resta
+        in attesa dello stesso motivo.
+        """
+        in_attesa = self._store.foto_in_attesa_di_motivo(risposta_a)
+        if in_attesa is None:
+            return None
+        motivo = regole.motivo_valido(testo or "")
+        return self.decidi(
+            in_attesa.giro_id, in_attesa.soprannome, in_attesa.versione, regole.DA_RIFARE, motivo
+        )
