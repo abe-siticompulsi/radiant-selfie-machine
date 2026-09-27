@@ -13,16 +13,17 @@ e la risposta dice la verità su cosa è partito e cosa no.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Protocol
 
 from . import foto, gettoni, pulsanti, regole
 from .config import Impostazioni
 from .regole import Giro
-from .store import Foto, Persona, Store
+from .store import Foto, Iscrizione, Persona, Store
 from .telegram import Pulsanti, TelegramError
 
 log = logging.getLogger(__name__)
@@ -80,6 +81,19 @@ class Ricevuta:
 
 def _iso(momento: datetime) -> str:
     return momento.astimezone(UTC).isoformat()
+
+
+_SESSIONE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _sessione_valida(sessione: str) -> str:
+    if not _SESSIONE.fullmatch(sessione or ""):
+        raise RichiestaErrata(f"sessione non valida: {sessione!r}")
+    try:
+        date.fromisoformat(sessione)
+    except ValueError:
+        raise RichiestaErrata(f"sessione non valida: {sessione!r}") from None
+    return sessione
 
 
 class Servizio:
@@ -355,3 +369,105 @@ class Servizio:
         return self.decidi(
             in_attesa.giro_id, in_attesa.soprannome, in_attesa.versione, regole.DA_RIFARE, motivo
         )
+
+    # --- il lato di ctc
+
+    def giri_dal(self, dal: datetime) -> list[dict]:
+        ora = self._ora()
+        return [
+            {**self._giro_json(giro), "aperto": regole.aperto(giro, ora)}
+            for giro in self._store.giri_dal(dal)
+        ]
+
+    def lega(self, giro_id: int, sessione: str) -> dict:
+        sessione = _sessione_valida(sessione)
+        giro = self._store.giro(giro_id)
+        if giro is None:
+            raise NonTrovato("giro inesistente")
+        if giro.sessione is None:
+            self._store.lega(giro_id, sessione)
+            giro = self._store.giro(giro_id)
+            assert giro is not None
+        if giro.sessione != sessione:
+            raise Conflitto(f"il giro è già legato alla sessione {giro.sessione}")
+        return self._giro_json(giro)
+
+    def foto_del_giro(self, giro_id: int) -> list[dict]:
+        if self._store.giro(giro_id) is None:
+            raise NonTrovato("giro inesistente")
+        return [
+            {
+                "soprannome": f.soprannome,
+                "versione": f.versione,
+                "stato": f.stato,
+                "sha256": f.sha256,
+                "motivo": f.motivo,
+            }
+            for f in self._store.foto_del_giro(giro_id)
+        ]
+
+    def dati_foto(self, giro_id: int, soprannome: str) -> bytes:
+        corrente = self._store.foto(giro_id, soprannome)
+        if corrente is None:
+            raise NonTrovato("foto inesistente")
+        try:
+            return foto.leggi(self._cartella, giro_id, soprannome, corrente.versione)
+        except FileNotFoundError:
+            raise NonTrovato("il file della foto non c'è più") from None
+
+    def persone(self) -> list[dict]:
+        return [
+            {"soprannome": p.soprannome, "ruolo": p.ruolo}
+            for p in self._store.persone()
+            if p.ruolo != regole.CTC
+        ]
+
+    # --- iscrizioni push
+
+    def iscrivi(self, persona: Persona, dati: dict) -> None:
+        self._richiedi(persona, regole.CHI_SCATTA)
+        endpoint = dati.get("endpoint")
+        chiavi = dati.get("keys") if isinstance(dati.get("keys"), dict) else {}
+        p256dh, auth = chiavi.get("p256dh"), chiavi.get("auth")
+        if not (
+            isinstance(endpoint, str) and endpoint.startswith("https://") and len(endpoint) <= 2048
+        ):
+            raise RichiestaErrata("iscrizione push non valida: endpoint")
+        if not all(isinstance(v, str) and 0 < len(v) <= 256 for v in (p256dh, auth)):
+            raise RichiestaErrata("iscrizione push non valida: chiavi")
+        self._store.aggiungi_iscrizione(Iscrizione(endpoint, persona.soprannome, p256dh, auth))
+
+    def disiscrivi(self, persona: Persona, endpoint: str) -> None:
+        self._store.togli_iscrizione(endpoint, soprannome=persona.soprannome)
+
+    # --- lavori periodici
+
+    def notifica_rinvii_scaduti(self) -> int:
+        ora = self._ora()
+        inviati = 0
+        for rinvio in self._store.rinvii_scaduti(ora):
+            giro = self._store.giro(rinvio.giro_id)
+            sua = self._store.foto(rinvio.giro_id, rinvio.soprannome)
+            if (
+                giro is not None
+                and regole.aperto(giro, ora)
+                and regole.rinvio_da_notificare(
+                    rinvio.fino_a, rinvio.notificato, sua.stato if sua else None, ora
+                )
+            ):
+                self._notifiche.a_persona(
+                    rinvio.soprannome, TITOLO, TESTO_INVITO_PUSH, ttl=TTL_INVITO
+                )
+                inviati += 1
+            self._store.segna_rinvio_notificato(rinvio.giro_id, rinvio.soprannome)
+        return inviati
+
+    def pulisci(self) -> int:
+        ora = self._ora()
+        puliti = 0
+        for giro in self._store.giri_con_foto():
+            if regole.da_cancellare(giro, ora):
+                foto.cancella_giro(self._cartella, giro.id)
+                self._store.cancella_foto_giro(giro.id)
+                puliti += 1
+        return puliti
