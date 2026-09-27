@@ -50,8 +50,9 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
 1. **Apertura.** Il master o Alberto preme «Apri il giro» sulla propria pagina.
    Il servizio registra il giro, il bot scrive nel gruppo del party
    («📸 È il momento del selfie per la miniatura!», senza link: ognuno ha la sua
-   pagina) e parte una notifica push a chiunque si sia iscritto: giocatori,
-   master e Alberto.
+   pagina) e parte una notifica push a chiunque si sia iscritto — giocatori,
+   master e Alberto — tranne chi ha aperto il giro, che la pagina ce l'ha già
+   davanti.
 2. **Invito.** La pagina aperta controlla lo stato ogni 20 secondi e mostra
    l'invito da sola; chiusa, lo mostra quando si tocca la notifica.
 3. **Scatto.** Anteprima della webcam con «Scatta» e «Salta». Dopo lo scatto la
@@ -128,9 +129,12 @@ HTML, CSS e JavaScript senza framework e senza build.
   Safari lo impone).
 - `sw.js` — il service worker: riceve il push, mostra la notifica, al tocco
   apre o porta in primo piano la pagina personale.
-- Il manifest è **per persona** (`/p/<gettone>/manifest.webmanifest`, con
-  `start_url` = `/p/<gettone>`), perché l'app installata deve ripartire dal suo
-  link (§6).
+- La pagina sta in `/p/<gettone>/`, con la barra finale. Il manifest è **per
+  persona** (`/p/<gettone>/manifest.webmanifest`, con `start_url` e `scope` =
+  `/p/<gettone>/`), perché l'app installata deve ripartire dal suo link (§6). Il
+  service worker sta in `/p/<gettone>/sw.js`: il suo ambito è la pagina
+  personale, così al tocco sulla notifica apre quella pagina senza che il
+  servizio conosca il gettone.
 - Tutti scattano dalla stessa schermata. Master e admin vedono in più il
   pannello del giro: «Apri il giro» e lo stato di ogni persona (nessuna foto,
   rinviato, in attesa, accettata, da rifare) — i nomi e gli stati, non le foto.
@@ -138,23 +142,27 @@ HTML, CSS e JavaScript senza framework e senza build.
 ## 5. API del servizio
 
 Autenticazione: `Authorization: Bearer <gettone>` su ogni rotta `/api/`. Un
-gettone assente o non valido riceve **404**, come una pagina che non esiste.
+gettone assente, non valido o con il ruolo sbagliato riceve **404**, come una
+pagina che non esiste. Il ruolo `ctc` (§6) è quello di `close-the-circle`.
 Le date viaggiano in ISO 8601 con fuso (UTC nel database).
 
 | Rotta | Ruoli | Effetto |
 |---|---|---|
-| `GET /p/{gettone}` | tutti | La pagina. |
-| `GET /p/{gettone}/manifest.webmanifest` | tutti | Il manifest della persona. |
+| `GET /salute` | nessuno | `{"ok": true}`: il controllo di salute del container. |
+| `GET /p/{gettone}/` | chi scatta | La pagina (`/p/{gettone}` rimanda qui con un 308). |
+| `GET /p/{gettone}/manifest.webmanifest` | chi scatta | Il manifest della persona. |
+| `GET /p/{gettone}/sw.js` | chi scatta | Il service worker. |
 | `GET /api/stato` | tutti | Persona, ruolo, giro aperto (id, apertura, scadenza) o nessuno, stato della propria foto con SHA-256 e l'eventuale motivo del rifiuto, fine del rinvio, chiave VAPID pubblica. Per master e admin anche lo stato di ogni persona. |
 | `POST /api/giro` | master, admin | Apre il giro o restituisce quello aperto (§3.8). La risposta dice se l'annuncio nel gruppo è partito. |
-| `PUT /api/giro/{id}/foto` | tutti | Corpo `image/jpeg`. Crea la propria foto, o sostituisce quella in attesa o da rifare; il nuovo stato è «in attesa», oppure «accettata» per la foto di `abe` (§3). Risponde con SHA-256 e byte salvati. **409** se la foto è già accettata, **410** se il giro è chiuso, **413** oltre gli 8 MB, **415** se non è un JPEG decodificabile. |
-| `POST /api/giro/{id}/rinvio` | tutti | Rinvio di X minuti. |
-| `POST /api/push` · `DELETE /api/push` | tutti | Iscrizione e cancellazione push del dispositivo. |
-| `GET /api/giri?dal=…` | admin | I giri aperti da quel momento, con la sessione a cui sono legati. |
-| `POST /api/giro/{id}/lega` | admin | Corpo `{"sessione": "AAAA-MM-GG"}`. Idempotente per la stessa sessione; **409** se il giro è già legato a un'altra. |
-| `GET /api/giro/{id}/foto` | admin | Per ogni persona: stato, SHA-256 e l'eventuale motivo del rifiuto. |
-| `GET /api/giro/{id}/foto/{soprannome}` | admin | I byte della foto. **Nessun effetto collaterale**: se `ctc` fallisce dopo averla scaricata, il servizio non deve credere la foto archiviata. Quello che è archiviato lo dice `Miniatura/`. |
-| `POST /api/giro/{id}/foto/{soprannome}/esito` | admin | Corpo `{"esito": "accettata" \| "da_rifare", "motivo": "…"}`, motivo facoltativo e solo con `da_rifare`, al massimo 200 caratteri: la validazione fatta da `ctc` a video. |
+| `PUT /api/giro/{id}/foto` | chi scatta | Corpo `image/jpeg`. Crea la propria foto, o sostituisce quella in attesa o da rifare; il nuovo stato è «in attesa», oppure «accettata» per la foto di `abe` (§3). Risponde con SHA-256, byte salvati, stato e versione. **409** se la foto è già accettata, **410** se il giro è chiuso, **413** oltre gli 8 MB, **415** se non è un JPEG decodificabile. |
+| `POST /api/giro/{id}/rinvio` | chi scatta | Rinvio di X minuti. |
+| `POST /api/push` · `DELETE /api/push` | chi scatta | Iscrizione e cancellazione push del dispositivo. |
+| `GET /api/giri?dal=…` | ctc | I giri aperti da quel momento, con la sessione a cui sono legati. |
+| `POST /api/giro/{id}/lega` | ctc | Corpo `{"sessione": "AAAA-MM-GG"}`. Idempotente per la stessa sessione; **409** se il giro è già legato a un'altra. |
+| `GET /api/giro/{id}/foto` | ctc | Per ogni persona: versione, stato, SHA-256 e l'eventuale motivo del rifiuto. |
+| `GET /api/giro/{id}/foto/{soprannome}` | ctc | I byte della foto. **Nessun effetto collaterale**: se `ctc` fallisce dopo averla scaricata, il servizio non deve credere la foto archiviata. Quello che è archiviato lo dice `Miniatura/`. |
+| `POST /api/giro/{id}/foto/{soprannome}/esito` | ctc | Corpo `{"esito": "accettata" \| "da_rifare", "motivo": "…", "versione": n}`, motivo facoltativo e solo con `da_rifare`, al massimo 200 caratteri: la validazione fatta da `ctc` a video. La versione è quella che `ctc` ha scaricato: se nel frattempo il giocatore ha rifatto la foto, **409**, e `ctc` non accetta una foto che non ha visto. |
+| `GET /api/persone` | ctc | Soprannome e ruolo di ogni persona, tranne `ctc`: per il confronto di `ctc doctor` con il roster. |
 
 I tocchi sui pulsanti del bot, e il testo di «Altro motivo…», fanno la stessa
 transizione di `…/esito`, e sono accettati **solo** dall'identificativo Telegram
@@ -173,11 +181,13 @@ cambia niente.
   l'app aggiunta alla schermata Home non condivide la memoria di Safari e deve
   poter ripartire dal solo link. Il prezzo è il gettone nei log di Nginx:
   accettato, per sei persone.
-- **Ruoli.** Giocatore: scatta. Master (gio): scatta e apre il giro. Admin:
-  scatta, apre il giro, vede gli stati, scarica e valida — è il link personale
-  di Alberto, più `ctc`, che usa un gettone admin suo e non scatta mai.
+- **Ruoli.** Giocatore: scatta. Master (gio): scatta e apre il giro. Admin
+  (Alberto): scatta, apre il giro, vede gli stati; valida dal bot. `ctc`: un
+  ruolo a parte per `close-the-circle`, che elenca i giri, li lega alla
+  sessione, scarica e valida le foto, ma non scatta, non riceve push e non
+  compare nel pannello né nel confronto col roster.
 - **Persone del servizio:** gio (master), emi, sem, sese, pippo (giocatori),
-  abe (admin). I soprannomi sono quelli del roster di `ctc` e passano la stessa
+  abe (admin), più `ctc` con il ruolo omonimo. I soprannomi sono quelli del roster di `ctc` e passano la stessa
   validazione (`^[a-z0-9_-]{1,32}$`). La lista è una copia tenuta a mano;
   `ctc doctor` segnala le differenze (§10).
 - **Foto.** Solo JPEG, al massimo 8 MB, che Pillow riesce a decodificare. Una
@@ -356,6 +366,7 @@ Un modulo nuovo, `giro.py`: il client HTTP del servizio (timeout 5 secondi),
 | Dimensione massima di una foto | 8 MB | servizio |
 | Cancellazione delle foto | 30 giorni dopo la chiusura del giro | servizio |
 | Ciclo del pianificatore | 30 secondi | servizio |
+| TTL dei push: invito e rinvio / esito della validazione | 30 minuti / 12 ore | servizio |
 | Cuscinetto prima della registrazione | 1 ora, compresa | `ctc` |
 | Timeout verso il servizio | 5 secondi | `ctc` |
 | Motivi predefiniti del rifiuto (`RSM_MOTIVI`), ciascuno con etichetta e testo | «Sfocata», «Troppo buia», «Viso non inquadrato», «Tagliata» → «tagliata (controlla che tutta la testa sia ben visibile nella foto)» | servizio, e `ctc` per le foto Telegram |
