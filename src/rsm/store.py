@@ -298,6 +298,44 @@ class Store:
             ).fetchone()
         return _foto(riga)
 
+    def ripristina_foto(
+        self, giro_id: int, soprannome: str, versione: int, precedente: Foto | None
+    ) -> bool:
+        """Rimette la foto com'era prima di `salva_foto`, quando poi il file non
+        è arrivato su disco: la riga non deve mai sopravvivere a una foto che
+        non esiste. Guardata sulla versione fallita, così un caricamento più
+        recente nel frattempo non viene toccato.
+        """
+        with self._connessione() as c:
+            if precedente is None:
+                cursore = c.execute(
+                    "DELETE FROM foto WHERE giro_id = ? AND soprannome = ? AND versione = ?",
+                    (giro_id, soprannome, versione),
+                )
+            else:
+                cursore = c.execute(
+                    """
+                    UPDATE foto SET
+                        versione = ?, stato = ?, sha256 = ?, byte = ?, ricevuta_alle = ?,
+                        motivo = ?, messaggio_bot = ?, attesa_motivo = ?
+                    WHERE giro_id = ? AND soprannome = ? AND versione = ?
+                    """,
+                    (
+                        precedente.versione,
+                        precedente.stato,
+                        precedente.sha256,
+                        precedente.byte,
+                        _iso(precedente.ricevuta_alle),
+                        precedente.motivo,
+                        precedente.messaggio_bot,
+                        precedente.attesa_motivo,
+                        giro_id,
+                        soprannome,
+                        versione,
+                    ),
+                )
+            return cursore.rowcount == 1
+
     def imposta_messaggio_bot(
         self, giro_id: int, soprannome: str, versione: int, messaggio: int
     ) -> bool:

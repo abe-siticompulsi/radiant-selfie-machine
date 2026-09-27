@@ -98,6 +98,35 @@ def test_salva_foto_crea_poi_sostituisce_e_azzera_motivo_e_messaggi(store):
     )
 
 
+def test_ripristinare_dopo_la_prima_foto_toglie_la_riga(store):
+    g = store.crea_giro(T0, "gio")
+    store.salva_foto(g.id, "emi", "in_attesa", "sha1", 10, T0)
+    assert store.ripristina_foto(g.id, "emi", 1, None)
+    assert store.foto(g.id, "emi") is None
+
+
+def test_ripristinare_dopo_una_sostituzione_rimette_la_foto_precedente(store):
+    g = store.crea_giro(T0, "gio")
+    store.salva_foto(g.id, "emi", "in_attesa", "sha1", 10, T0)
+    store.imposta_messaggio_bot(g.id, "emi", 1, 555)
+    store.decidi(g.id, "emi", 1, "da_rifare", "sfocata")
+    precedente = store.foto(g.id, "emi")
+    seconda = store.salva_foto(g.id, "emi", "in_attesa", "sha2", 20, T0 + timedelta(minutes=1))
+    assert seconda.versione == 2
+    assert store.ripristina_foto(g.id, "emi", seconda.versione, precedente)
+    assert store.foto(g.id, "emi") == precedente
+
+
+def test_ripristinare_con_una_versione_superata_non_cambia_nulla(store):
+    g = store.crea_giro(T0, "gio")
+    store.salva_foto(g.id, "emi", "in_attesa", "sha1", 10, T0)
+    precedente = store.foto(g.id, "emi")
+    seconda = store.salva_foto(g.id, "emi", "in_attesa", "sha2", 20, T0 + timedelta(minutes=1))
+    store.salva_foto(g.id, "emi", "in_attesa", "sha3", 30, T0 + timedelta(minutes=2))
+    assert not store.ripristina_foto(g.id, "emi", seconda.versione, precedente)
+    assert store.foto(g.id, "emi").sha256 == "sha3"
+
+
 def test_una_foto_accettata_non_si_sostituisce(store):
     g = store.crea_giro(T0, "gio")
     store.salva_foto(g.id, "abe", "accettata", "sha1", 10, T0)
