@@ -31,9 +31,11 @@ chmod 600 config/rsm.env
 Compila `config/rsm.env`: token del bot e contatto VAPID. **Lascia
 `RSM_GRUPPO` vuoto**: è la sicura.
 
-Poi l'identificativo del gruppo di prova: scrivi un messaggio qualsiasi nel
-gruppo e, sul server, prima di avviare il servizio (acceso, si prenderebbe lui
-gli aggiornamenti):
+Poi l'identificativo del gruppo di prova. Il bot nasce con la privacy attiva:
+nel gruppo non riceve i messaggi normali, solo i comandi rivolti a lui. Scrivi
+quindi nel gruppo `/start@<nome_del_bot>` (il nome utente del bot, quello che
+finisce in `bot`) e, sul server, prima di avviare il servizio (acceso, si
+prenderebbe lui gli aggiornamenti):
 
 ```bash
 TOKEN=$(grep -oP '^RSM_BOT_TOKEN=\K.*' config/rsm.env)
@@ -58,7 +60,18 @@ inutili tutte le iscrizioni push già fatte.
 
 ## 5. Nginx e il certificato
 
-Un blocco nuovo, accanto a quello di Nextcloud. `client_max_body_size` è
+Il sottodominio risolve già all'indirizzo della macchina (DuckDNS risolve ogni
+sottodominio). Prima il certificato: il blocco qui sotto lo cita, e finché i
+file non esistono `nginx -t` fallisce. Con certbot:
+
+```bash
+certbot certonly --nginx -d selfie.esempio.duckdns.org
+```
+
+oppure con `certbot certonly --webroot`, o con il metodo che già usi per
+Nextcloud.
+
+Poi un blocco nuovo, accanto a quello di Nextcloud. `client_max_body_size` è
 obbligatorio: per default Nginx rifiuta i corpi oltre 1 MB, e la foto vera
 fallirebbe con un 413 di Nginx, non nostro.
 
@@ -81,10 +94,13 @@ server {
 }
 ```
 
-Il sottodominio risolve già all'indirizzo della macchina (DuckDNS risolve ogni
-sottodominio). Il certificato: con certbot, `certbot --nginx -d
-selfie.esempio.duckdns.org`, oppure con il metodo che già usi per
-Nextcloud. Poi `nginx -t && systemctl reload nginx`.
+`http2 on;` esiste da Nginx 1.25.1 (`nginx -v` dice la versione): con un Nginx
+precedente si scrive `listen 443 ssl http2;` e si toglie la riga `http2 on;`.
+Poi:
+
+```bash
+nginx -t && systemctl reload nginx
+```
 
 ## 6. Avvio
 
