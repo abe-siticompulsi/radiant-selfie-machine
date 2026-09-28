@@ -7,6 +7,7 @@ from py_vapid import Vapid
 from rsm import foto
 from rsm.app import CSP, crea_app
 from rsm.principale import costruisci
+from tests.finti import chiavi_push
 from tests.immagini import jpeg, png
 
 
@@ -154,7 +155,7 @@ def test_salta(client, persone):
 
 def test_iscrizione_push(client, persone, store):
     emi = con(persone, "emi")
-    iscrizione = {"endpoint": "https://push.example/1", "keys": {"p256dh": "p", "auth": "a"}}
+    iscrizione = {"endpoint": "https://push.example/1", "keys": chiavi_push()}
     assert client.post("/api/push", json=iscrizione, headers=emi).status_code == 204
     assert len(store.iscrizioni_di("emi")) == 1
     assert client.post("/api/push", json={"endpoint": "http://x"}, headers=emi).status_code == 400

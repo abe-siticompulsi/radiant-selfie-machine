@@ -81,6 +81,11 @@ class Notificatore:
                     log.warning("push a %s rifiutato dal servizio push (%s)", soprannome, stato)
             except (requests.RequestException, OSError) as e:
                 log.warning("push a %s non inviato: %s", soprannome, type(e).__name__)
+            except Exception as e:
+                # Per esempio una chiave che non è un punto P-256 (ValueError,
+                # IndexError): gli altri dispositivi ricevono lo stesso. Solo il
+                # tipo: il testo può riportare i dati dell'iscrizione.
+                log.warning("push a %s non inviato, errore inatteso: %s", soprannome, type(e).__name__)
             else:
                 accettati += 1
         return accettati

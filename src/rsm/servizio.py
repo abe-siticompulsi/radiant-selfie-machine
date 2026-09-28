@@ -12,6 +12,8 @@ e la risposta dice la verità su cosa è partito e cosa no.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import re
 from collections.abc import Callable
@@ -94,6 +96,20 @@ def _sessione_valida(sessione: str) -> str:
     except ValueError:
         raise RichiestaErrata(f"sessione non valida: {sessione!r}") from None
     return sessione
+
+
+_BASE64URL = re.compile(r"[A-Za-z0-9_-]+={0,2}")
+
+
+def _byte_base64url(valore: object) -> bytes | None:
+    """I byte di una chiave dell'iscrizione push, o `None` se non è base64url."""
+    if not isinstance(valore, str) or len(valore) > 256 or not _BASE64URL.fullmatch(valore):
+        return None
+    senza = valore.rstrip("=")
+    try:
+        return base64.urlsafe_b64decode(senza + "=" * (-len(senza) % 4))
+    except binascii.Error:
+        return None
 
 
 class Servizio:
@@ -434,8 +450,13 @@ class Servizio:
             isinstance(endpoint, str) and endpoint.startswith("https://") and len(endpoint) <= 2048
         ):
             raise RichiestaErrata("iscrizione push non valida: endpoint")
-        if not all(isinstance(v, str) and 0 < len(v) <= 256 for v in (p256dh, auth)):
-            raise RichiestaErrata("iscrizione push non valida: chiavi")
+        # Come le genera il browser: un punto P-256 non compresso e 16 byte. Una
+        # chiave diversa farebbe fallire pywebpush a ogni push per questa persona.
+        punto, segreto = _byte_base64url(p256dh), _byte_base64url(auth)
+        if punto is None or len(punto) != 65 or punto[0] != 0x04:
+            raise RichiestaErrata("iscrizione push non valida: chiave p256dh")
+        if segreto is None or len(segreto) != 16:
+            raise RichiestaErrata("iscrizione push non valida: chiave auth")
         self._store.aggiungi_iscrizione(Iscrizione(endpoint, persona.soprannome, p256dh, auth))
 
     def disiscrivi(self, persona: Persona, endpoint: str) -> None:

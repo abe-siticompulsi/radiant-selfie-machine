@@ -86,6 +86,25 @@ def test_un_errore_di_rete_non_esplode(con_iscrizioni, vapid):
     assert Notificatore(con_iscrizioni, vapid, "mailto:a@b.c", invia=invia).a_persona("gio", "t", "x", ttl=60) == 0
 
 
+@pytest.mark.parametrize("errore", [ValueError("Invalid EC key"), IndexError("index out of range")])
+def test_una_chiave_malformata_non_esplode_e_non_ferma_gli_altri_dispositivi(con_iscrizioni, vapid, errore, caplog):
+    """pywebpush solleva così su una chiave che non è un punto P-256: il push
+    agli altri dispositivi parte lo stesso, e l'iscrizione resta (non è scaduta)."""
+    tentati = []
+
+    def invia(**kw):
+        tentati.append(kw["subscription_info"]["endpoint"])
+        if len(tentati) == 1:
+            raise errore
+
+    notificatore = Notificatore(con_iscrizioni, vapid, "mailto:a@b.c", invia=invia)
+    assert notificatore.a_persona("emi", "t", "x", ttl=60) == 1
+    assert len(tentati) == 2
+    assert len(con_iscrizioni.iscrizioni_di("emi")) == 2
+    assert type(errore).__name__ in caplog.text
+    assert str(errore) not in caplog.text
+
+
 def test_senza_iscrizioni_non_si_manda_niente(store, vapid):
     chiamate = []
     n = Notificatore(store, vapid, "mailto:a@b.c", invia=lambda **kw: chiamate.append(kw))
