@@ -87,6 +87,10 @@ class Validatore:
     def _messaggio(self, messaggio: dict) -> None:
         if messaggio.get("from", {}).get("id") != self._admin:
             return
+        # Solo la chat privata con Alberto: gli id dei messaggi valgono per chat,
+        # e in un gruppo lo stesso numero è un altro messaggio.
+        if messaggio.get("chat", {}).get("id") != self._admin:
+            return
         domanda = messaggio.get("reply_to_message") or {}
         if not (domanda.get("text") or "").startswith(pulsanti.DOMANDA_MOTIVO):
             return

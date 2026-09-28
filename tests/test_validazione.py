@@ -26,12 +26,14 @@ def tocco(dati, da=ALBERTO):
     return {"update_id": 1, "callback_query": {"id": "t1", "from": {"id": da}, "data": dati}}
 
 
-def risposta(testo, domanda, da=ALBERTO):
+def risposta(testo, domanda, da=ALBERTO, chat=ALBERTO):
+    """Nella chat privata con il bot l'id della chat è quello di chi scrive."""
     return {
         "update_id": 2,
         "message": {
             "message_id": 900,
             "from": {"id": da},
+            "chat": {"id": chat},
             "text": testo,
             "reply_to_message": {"message_id": domanda["id"], "text": domanda["testo"]},
         },
@@ -143,6 +145,17 @@ def test_i_messaggi_che_non_rispondono_alla_domanda_si_ignorano(validatore, giro
     validatore.gestisci({"update_id": 3, "message": {"message_id": 1, "from": {"id": ALBERTO}, "text": "ciao"}})
     validatore.gestisci(risposta("x", {"id": 102, "testo": "Selfie di emi"}))
     validatore.gestisci(risposta("x", {"id": 103, "testo": "Scrivi il motivo per emi"}, da=12345))
+    assert len(telegram.chiamate) == prima
+
+
+def test_una_risposta_di_alberto_in_un_altra_chat_si_ignora(validatore, giro_id, store, telegram):
+    """Gli id dei messaggi valgono per chat: nel gruppo lo stesso numero è un
+    altro messaggio, che non è la domanda del bot."""
+    validatore.gestisci(tocco(pulsanti.dati_tocco(giro_id, "emi", 1, pulsanti.ALTRO)))
+    domanda = ultima_domanda(telegram)
+    prima = len(telegram.chiamate)
+    validatore.gestisci(risposta("sfocata", domanda, chat=-100))
+    assert store.foto(giro_id, "emi").stato == "in_attesa"
     assert len(telegram.chiamate) == prima
 
 
