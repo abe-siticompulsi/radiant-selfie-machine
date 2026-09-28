@@ -409,12 +409,15 @@ class Store:
             ).fetchall()
         return [_rinvio(r) for r in righe]
 
-    def segna_rinvio_notificato(self, giro_id: int, soprannome: str) -> None:
+    def segna_rinvio_notificato(self, giro_id: int, soprannome: str, fino_a: datetime) -> bool:
+        """Guardato sulla scadenza vista: un nuovo «Salta» arrivato mentre partiva
+        il push del vecchio resta da notificare."""
         with self._connessione() as c:
-            c.execute(
-                "UPDATE rinvii SET notificato = 1 WHERE giro_id = ? AND soprannome = ?",
-                (giro_id, soprannome),
+            cursore = c.execute(
+                "UPDATE rinvii SET notificato = 1 WHERE giro_id = ? AND soprannome = ? AND fino_a = ?",
+                (giro_id, soprannome, _iso(fino_a)),
             )
+            return cursore.rowcount == 1
 
     # --- iscrizioni push
 

@@ -182,10 +182,22 @@ def test_rinvii_scadenza_e_notifica(store):
     assert store.rinvii_scaduti(T0 + timedelta(minutes=9)) == []
     scaduti = store.rinvii_scaduti(T0 + timedelta(minutes=10))
     assert [(r.soprannome, r.notificato) for r in scaduti] == [("emi", False)]
-    store.segna_rinvio_notificato(g.id, "emi")
+    assert store.segna_rinvio_notificato(g.id, "emi", T0 + timedelta(minutes=10))
     assert store.rinvii_scaduti(T0 + timedelta(hours=1)) == []
     store.imposta_rinvio(g.id, "emi", T0 + timedelta(minutes=30))  # un nuovo «Salta»
     assert store.rinvio(g.id, "emi").notificato is False
+
+
+def test_si_segna_solo_il_rinvio_con_la_scadenza_vista(store):
+    """Un nuovo «Salta» arrivato mentre partiva il push del vecchio non va segnato."""
+    g = store.crea_giro(T0, "gio")
+    vecchio, nuovo = T0 + timedelta(minutes=10), T0 + timedelta(minutes=20)
+    store.imposta_rinvio(g.id, "emi", vecchio)
+    store.imposta_rinvio(g.id, "emi", nuovo)
+    assert not store.segna_rinvio_notificato(g.id, "emi", vecchio)
+    assert store.rinvio(g.id, "emi").notificato is False
+    assert store.segna_rinvio_notificato(g.id, "emi", nuovo)
+    assert store.rinvio(g.id, "emi").notificato is True
 
 
 def test_iscrizioni(store):

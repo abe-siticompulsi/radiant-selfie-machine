@@ -149,6 +149,26 @@ def test_il_rinvio_scaduto_si_notifica_una_volta_e_solo_a_chi_non_ha_scattato(se
     assert servizio.notifica_rinvii_scaduti() == 0
 
 
+def test_un_salta_arrivato_durante_il_push_del_rinvio_avra_il_suo(servizio, persone, orologio, store, notifiche):
+    giro_id = apri(servizio, persone)
+    emi = chi(persone, "emi")
+    servizio.rinvia(emi, giro_id)
+    orologio.avanza(minutes=10)
+    manda = notifiche.a_persona
+
+    def manda_mentre_emi_salta_di_nuovo(*args, **kwargs):
+        servizio.rinvia(emi, giro_id)
+        return manda(*args, **kwargs)
+
+    notifiche.a_persona = manda_mentre_emi_salta_di_nuovo
+    assert servizio.notifica_rinvii_scaduti() == 1
+    notifiche.a_persona = manda
+    assert store.rinvio(giro_id, "emi").notificato is False
+    orologio.avanza(minutes=10)
+    assert servizio.notifica_rinvii_scaduti() == 1
+    assert [n["soprannome"] for n in notifiche.inviate] == ["emi", "emi"]
+
+
 def test_nessun_rinvio_notificato_a_giro_chiuso(servizio, persone, orologio, store, notifiche):
     giro_id = apri(servizio, persone)
     servizio.rinvia(chi(persone, "emi"), giro_id)

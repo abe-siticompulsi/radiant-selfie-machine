@@ -16,6 +16,7 @@ import base64
 import binascii
 import logging
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -131,6 +132,9 @@ class Servizio:
         self._imp = impostazioni
         self._chiave_vapid = chiave_vapid
         self._ora = ora
+        # Il servizio gira in un solo processo: basta un lucchetto perché due
+        # «Apri il giro» premuti insieme non aprano due giri, con due annunci.
+        self._apertura = threading.Lock()
 
     # --- identità
 
@@ -169,13 +173,14 @@ class Servizio:
 
     def apri_giro(self, persona: Persona) -> dict:
         self._richiedi(persona, regole.CHI_APRE)
-        ora = self._ora()
-        decisione = regole.decidi_apertura(self._store.ultimo_giro(), ora)
-        if decisione.riusa is not None:
-            return {"giro": self._giro_json(decisione.riusa), "nuovo": False, "annuncio": None}
-        if decisione.chiudi is not None:
-            self._store.chiudi_giro(decisione.chiudi.id, ora)
-        giro = self._store.crea_giro(ora, persona.soprannome)
+        with self._apertura:
+            ora = self._ora()
+            decisione = regole.decidi_apertura(self._store.ultimo_giro(), ora)
+            if decisione.riusa is not None:
+                return {"giro": self._giro_json(decisione.riusa), "nuovo": False, "annuncio": None}
+            if decisione.chiudi is not None:
+                self._store.chiudi_giro(decisione.chiudi.id, ora)
+            giro = self._store.crea_giro(ora, persona.soprannome)
         return {"giro": self._giro_json(giro), "nuovo": True, "annuncio": self._annuncia_nel_gruppo()}
 
     def _annuncia_nel_gruppo(self) -> dict:
@@ -481,7 +486,7 @@ class Servizio:
                     rinvio.soprannome, TITOLO, TESTO_INVITO_PUSH, ttl=TTL_INVITO
                 )
                 inviati += 1
-            self._store.segna_rinvio_notificato(rinvio.giro_id, rinvio.soprannome)
+            self._store.segna_rinvio_notificato(rinvio.giro_id, rinvio.soprannome, rinvio.fino_a)
         return inviati
 
     def pulisci(self) -> int:
