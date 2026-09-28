@@ -36,18 +36,21 @@ def ciclo_bot(
     offset = int(salvato) if salvato else None
     while not fermo.is_set():
         try:
-            aggiornamenti = telegram.aggiornamenti(offset, attesa)
+            for aggiornamento in telegram.aggiornamenti(offset, attesa):
+                try:
+                    validatore.gestisci(aggiornamento)
+                except Exception:
+                    log.exception("aggiornamento %s non gestito", aggiornamento.get("update_id"))
+                offset = int(aggiornamento["update_id"]) + 1
+                store.scrivi_valore(CHIAVE_OFFSET, str(offset))
         except TelegramError as e:
             log.warning("lettura del bot non riuscita: %s", e)
             fermo.wait(pausa_errore)
-            continue
-        for aggiornamento in aggiornamenti:
-            try:
-                validatore.gestisci(aggiornamento)
-            except Exception:
-                log.exception("aggiornamento %s non gestito", aggiornamento.get("update_id"))
-            offset = int(aggiornamento["update_id"]) + 1
-            store.scrivi_valore(CHIAVE_OFFSET, str(offset))
+        except Exception:
+            # Per esempio «database is locked» salvando l'offset: il filo non deve
+            # morire, perché /salute resterebbe verde con il bot sordo.
+            log.exception("ciclo del bot: errore inatteso, riprovo")
+            fermo.wait(pausa_errore)
 
 
 def passo(servizio) -> None:

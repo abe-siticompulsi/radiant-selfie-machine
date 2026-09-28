@@ -1,3 +1,4 @@
+import sqlite3
 import threading
 
 from rsm import cicli
@@ -72,6 +73,35 @@ def test_un_errore_di_telegram_fa_riprovare(store):
     validatore = ValidatoreFinto()
     cicli.ciclo_bot(telegram, validatore, store, fermo, attesa=0, pausa_errore=0)
     assert validatore.visti == [1]
+
+
+class StoreCheSiBloccaUnaVolta:
+    """Il primo `scrivi_valore` fallisce come SQLite sotto una scrittura concorrente."""
+
+    def __init__(self, store):
+        self._store = store
+        self.fallito = False
+
+    def leggi_valore(self, chiave):
+        return self._store.leggi_valore(chiave)
+
+    def scrivi_valore(self, chiave, valore):
+        if not self.fallito:
+            self.fallito = True
+            raise sqlite3.OperationalError("database is locked")
+        self._store.scrivi_valore(chiave, valore)
+
+
+def test_un_errore_qualsiasi_non_uccide_il_ciclo(store):
+    fermo = threading.Event()
+    telegram = TelegramACicli(fermo, [[{"update_id": 5}], [{"update_id": 6}]])
+    validatore = ValidatoreFinto()
+    bloccato = StoreCheSiBloccaUnaVolta(store)
+    cicli.ciclo_bot(telegram, validatore, bloccato, fermo, attesa=0, pausa_errore=0)
+    assert bloccato.fallito
+    assert validatore.visti == [5, 6]
+    assert store.leggi_valore(cicli.CHIAVE_OFFSET) == "7"
+    assert offset_chiesti(telegram) == [None, 6, 7]
 
 
 class ServizioFinto:
