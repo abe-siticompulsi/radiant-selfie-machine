@@ -33,7 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     aggiungi = azioni.add_parser("aggiungi", help="aggiunge una persona e stampa il suo link")
     aggiungi.add_argument("soprannome")
     aggiungi.add_argument("--ruolo", choices=regole.RUOLI, required=True)
-    revoca = azioni.add_parser("revoca", help="annulla il link e ne stampa uno nuovo")
+    revoca = azioni.add_parser("revoca", help="annulla il link, toglie le iscrizioni push e stampa un link nuovo")
     revoca.add_argument("soprannome")
     rimuovi = azioni.add_parser("rimuovi", help="toglie una persona e le sue iscrizioni push")
     rimuovi.add_argument("soprannome")
@@ -80,6 +80,11 @@ def _persona(args: argparse.Namespace, env: Mapping[str, str], stampa: Callable)
             config.url_base(env)
         gettone = gettoni.genera()
         store.sostituisci_gettone(soprannome, gettoni.impronta(gettone))
+        # Le iscrizioni sono legate al soprannome, non al link: senza toglierle,
+        # chi ha il link vecchio continuerebbe a ricevere i push.
+        tolte = store.togli_iscrizioni_di(soprannome)
+        if esistente.ruolo != regole.CTC:
+            stampa(f"iscrizioni push tolte: {tolte}; le notifiche vanno riattivate dal link nuovo")
         stampa(_consegna(esistente.ruolo, soprannome, gettone, env))
         return 0
     if not store.rimuovi_persona(soprannome):

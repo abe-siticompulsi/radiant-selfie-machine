@@ -441,6 +441,12 @@ class Store:
                     (endpoint, soprannome),
                 )
 
+    def togli_iscrizioni_di(self, soprannome: str) -> int:
+        """Tutte le iscrizioni di una persona, per esempio quando il suo link è
+        revocato: chi ha il link vecchio non deve più ricevere i suoi push."""
+        with self._connessione() as c:
+            return c.execute("DELETE FROM iscrizioni WHERE soprannome = ?", (soprannome,)).rowcount
+
     def iscrizioni_di(self, soprannome: str) -> list[Iscrizione]:
         with self._connessione() as c:
             righe = c.execute(

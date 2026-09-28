@@ -4,7 +4,7 @@ import stat
 
 from rsm import gettoni
 from rsm.cli import main
-from rsm.store import Store
+from rsm.store import Iscrizione, Store
 
 
 def ambiente(tmp_path):
@@ -56,6 +56,18 @@ def test_revocare_cambia_il_link(tmp_path):
     assert store.persona_da_impronta(gettoni.impronta(gettone_dal_link(prima))) is None
     assert store.persona_da_impronta(gettoni.impronta(gettone_dal_link(dopo))).soprannome == "emi"
     assert esegui(["persona", "revoca", "nessuno"], env)[0] == 1
+
+
+def test_revocare_toglie_le_iscrizioni_push(tmp_path):
+    env = ambiente(tmp_path)
+    esegui(["persona", "aggiungi", "emi", "--ruolo", "giocatore"], env)
+    store = Store(env["RSM_DB"])
+    store.aggiungi_iscrizione(Iscrizione("https://push.example/1", "emi", "p", "a"))
+    store.aggiungi_iscrizione(Iscrizione("https://push.example/2", "emi", "p", "a"))
+    codice, uscita = esegui(["persona", "revoca", "emi"], env)
+    assert codice == 0
+    assert store.iscrizioni_di("emi") == []
+    assert "iscrizioni push tolte: 2; le notifiche vanno riattivate dal link nuovo" in uscita
 
 
 def test_rimuovere_ed_elencare(tmp_path):

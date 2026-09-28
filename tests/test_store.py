@@ -199,6 +199,16 @@ def test_iscrizioni(store):
     assert store.iscrizioni_di("sem") == []
 
 
+def test_togliere_tutte_le_iscrizioni_di_una_persona(store):
+    store.aggiungi_iscrizione(Iscrizione("https://push/1", "emi", "p1", "a1"))
+    store.aggiungi_iscrizione(Iscrizione("https://push/2", "emi", "p2", "a2"))
+    store.aggiungi_iscrizione(Iscrizione("https://push/3", "sem", "p3", "a3"))
+    assert store.togli_iscrizioni_di("emi") == 2
+    assert store.iscrizioni_di("emi") == []
+    assert len(store.iscrizioni_di("sem")) == 1
+    assert store.togli_iscrizioni_di("emi") == 0
+
+
 def test_valori(store):
     assert store.leggi_valore("offset") is None
     store.scrivi_valore("offset", "5")
