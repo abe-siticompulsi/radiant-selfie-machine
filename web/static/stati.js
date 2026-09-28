@@ -63,6 +63,15 @@ export async function conTentativi(
   throw ultimo;
 }
 
+// Un 409 al tentativo automatico può seguire un primo invio riuscito la cui
+// risposta si è persa (la foto di Alberto è accettata all'arrivo, o quella di un
+// giocatore è stata accettata nel frattempo). È un successo solo se la foto che
+// il servizio ha adesso è proprio quella che la pagina ha mandato: stesso
+// evento di un invio riuscito, altrimenti quello di un invio respinto.
+export function esitoDopoConflitto(server, impronta) {
+  return impronta && server?.foto?.sha256 === impronta ? 'inviata' : 'respinta';
+}
+
 export const ETICHETTE_PANNELLO = Object.freeze({
   nessuna: 'nessuna foto',
   rinviato: 'ha rimandato',

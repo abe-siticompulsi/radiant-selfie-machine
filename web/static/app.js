@@ -7,6 +7,7 @@ import {
   dopo,
   esadecimale,
   esitoApertura,
+  esitoDopoConflitto,
   msAllaFineDelRinvio,
   schermata,
   vistaNotifiche,
@@ -73,6 +74,15 @@ async function aggiorna() {
   }
   if ($('avviso').textContent === AVVISO_RETE) avvisa('');
   disegna();
+}
+
+// Lo stato del servizio adesso, o null se non risponde.
+async function statoAttuale() {
+  try {
+    return await api('GET', '/api/stato');
+  } catch {
+    return null;
+  }
 }
 
 // Un doppio tocco manda lo stesso evento due volte: il secondo non è ammesso
@@ -171,9 +181,12 @@ async function inviaFoto(evento) {
     await aggiorna();
   } catch (errore) {
     if (errore.stato === 409 || errore.stato === 410) {
+      // Il 409 può arrivare al tentativo automatico dopo un primo invio riuscito:
+      // decide la foto che il servizio ha adesso.
+      const esito = errore.stato === 409 ? esitoDopoConflitto(await statoAttuale(), attesa) : 'respinta';
       fotoPronta = null;
-      vai('respinta');
-      avvisa(`Foto non inviata: ${errore.message}.`);
+      vai(esito);
+      if (esito === 'respinta') avvisa(`Foto non inviata: ${errore.message}.`);
       await aggiorna();
       return;
     }

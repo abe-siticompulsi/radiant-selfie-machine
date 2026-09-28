@@ -8,6 +8,7 @@ import {
   dopo,
   esadecimale,
   esitoApertura,
+  esitoDopoConflitto,
   msAllaFineDelRinvio,
   schermata,
   vistaNotifiche,
@@ -113,6 +114,15 @@ test('conTentativi si ferma al primo successo', async () => {
   }, 3, async () => {});
   assert.equal(risultato, 'ok');
   assert.equal(volte, 2);
+});
+
+test('un 409 dopo una risposta persa è un successo solo se il servizio ha proprio quella foto', () => {
+  const accettata = stato({ foto: { stato: 'accettata', sha256: 'abc', motivo: null } });
+  assert.equal(esitoDopoConflitto(accettata, 'abc'), 'inviata');
+  assert.equal(esitoDopoConflitto(accettata, 'def'), 'respinta');
+  assert.equal(esitoDopoConflitto(stato(), 'abc'), 'respinta');
+  assert.equal(esitoDopoConflitto(null, 'abc'), 'respinta'); // il servizio non ha risposto: niente da verificare
+  assert.equal(esitoDopoConflitto(stato({ foto: { stato: 'accettata', motivo: null } }), undefined), 'respinta');
 });
 
 test('il messaggio dopo «Apri il giro» dice la verità', () => {

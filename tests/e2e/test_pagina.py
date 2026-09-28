@@ -44,6 +44,33 @@ def test_scatto_e_invio_fino_alla_foto_ricevuta(in_rete, pagina):
     assert aspetta(lambda: in_rete.telegram.di_tipo("manda_foto"))
 
 
+def test_un_409_dopo_una_risposta_persa_non_diventa_foto_non_inviata(in_rete, pagina):
+    """Il primo invio arriva al servizio ma la risposta si perde; Alberto accetta
+    la foto; il tentativo automatico riceve 409. La foto del servizio è quella
+    della pagina: è un successo, e nessun «Foto non inviata»."""
+    giro_id = in_rete.servizio.apri_giro(in_rete.gio)["giro"]["id"]
+    invii = []
+
+    def risposta_persa(richiesta):
+        invii.append(richiesta.request.method)
+        if len(invii) > 1:
+            richiesta.continue_()
+            return
+        richiesta.fetch()
+        in_rete.servizio.decidi(giro_id, "emi", 1, "accettata", None)
+        richiesta.abort()
+
+    pagina.route(f"**/api/giro/{giro_id}/foto", risposta_persa)
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    pagina.click("#scatta")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    pagina.click("#scatta-foto")
+    pagina.click("#invia")
+    schermata(pagina, "accettata").wait_for(state="visible")
+    assert invii == ["PUT", "PUT"]
+    assert pagina.locator("#avviso").is_hidden(), pagina.locator("#avviso").text_content()
+
+
 def test_l_avviso_di_rete_sparisce_quando_il_servizio_risponde(in_rete, pagina):
     in_rete.servizio.apri_giro(in_rete.gio)
     pagina.route("**/api/stato", lambda richiesta: richiesta.abort())
