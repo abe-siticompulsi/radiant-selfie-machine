@@ -82,6 +82,25 @@ export function esitoApertura(risposta, formattaOra) {
   return 'Giro aperto. Annuncio mandato nel gruppo del party.';
 }
 
+// La sezione «Attiva le notifiche». Il permesso e l'iscrizione del browser non
+// dicono che i push arriveranno: il servizio può non averla salvata, o averla
+// tolta. La sezione sparisce solo quando il servizio ha confermato l'iscrizione
+// in questa sessione della pagina.
+export function vistaNotifiche({ possibile, permesso, iscrizioneBrowser, confermataDalServizio }) {
+  if (!possibile) return { sezione: false, pulsante: false, testo: null };
+  if (permesso === 'denied') {
+    return {
+      sezione: true,
+      pulsante: false,
+      testo: 'Le notifiche sono bloccate: si riattivano dalle impostazioni del browser.',
+    };
+  }
+  if (permesso === 'granted' && iscrizioneBrowser && confermataDalServizio) {
+    return { sezione: false, pulsante: false, testo: null };
+  }
+  return { sezione: true, pulsante: true, testo: "Vuoi ricevere l'invito anche a pagina chiusa?" };
+}
+
 export function base64UrlInByte(testo) {
   const base64 = testo.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (testo.length % 4)) % 4);
   return Uint8Array.from(atob(base64), (carattere) => carattere.charCodeAt(0));

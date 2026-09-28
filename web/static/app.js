@@ -9,6 +9,7 @@ import {
   esitoApertura,
   msAllaFineDelRinvio,
   schermata,
+  vistaNotifiche,
 } from './stati.js';
 
 const gettone = location.pathname.split('/')[2];
@@ -23,6 +24,7 @@ let accensione = null;
 let fotoPronta = null;
 let timerRinvio = null;
 let registrazione = null;
+let endpointConfermato = null; // l'iscrizione che il servizio ha salvato in questa sessione della pagina
 
 class ErroreApi extends Error {
   constructor(stato, messaggio) {
@@ -236,20 +238,50 @@ async function registraServiceWorker() {
   }
 }
 
+const pushPossibile = () => Boolean(registrazione) && 'PushManager' in window && 'Notification' in window;
+
+// Non rifiuta mai: un errore del browser lascia la sezione visibile, e il
+// pulsante riprova.
 async function disegnaNotifiche() {
   $('suggerimento-ios').hidden = !('standalone' in navigator && !navigator.standalone);
-  const possibile = registrazione && 'PushManager' in window && 'Notification' in window;
-  if (!possibile) {
-    $('notifiche').hidden = true;
-    return;
+  const possibile = pushPossibile();
+  let iscrizione = null;
+  if (possibile) {
+    try {
+      iscrizione = await registrazione.pushManager.getSubscription();
+    } catch {
+      // senza un'iscrizione leggibile la sezione resta visibile
+    }
   }
-  const negate = Notification.permission === 'denied';
-  $('notifiche-testo').textContent = negate
-    ? 'Le notifiche sono bloccate: si riattivano dalle impostazioni del browser.'
-    : "Vuoi ricevere l'invito anche a pagina chiusa?";
-  $('attiva-notifiche').hidden = negate;
-  const iscrizione = await registrazione.pushManager.getSubscription();
-  $('notifiche').hidden = Notification.permission === 'granted' && iscrizione !== null;
+  const vista = vistaNotifiche({
+    possibile,
+    permesso: possibile ? Notification.permission : null,
+    iscrizioneBrowser: iscrizione !== null,
+    confermataDalServizio: iscrizione !== null && iscrizione.endpoint === endpointConfermato,
+  });
+  $('notifiche').hidden = !vista.sezione;
+  $('attiva-notifiche').hidden = !vista.pulsante;
+  $('notifiche-testo').textContent = vista.testo ?? '';
+}
+
+// Il servizio fa un upsert sull'endpoint: rimandare la stessa iscrizione è innocuo.
+async function confermaIscrizione(iscrizione) {
+  await api('POST', '/api/push', JSON.stringify(iscrizione.toJSON()), 'application/json');
+  endpointConfermato = iscrizione.endpoint;
+}
+
+// A ogni caricamento l'iscrizione che il browser ha già torna al servizio, che
+// può non averla mai salvata o averla tolta. Non rifiuta mai: se non va, la
+// sezione resta visibile e il pulsante riprova.
+async function rimandaIscrizione() {
+  if (!pushPossibile() || Notification.permission !== 'granted') return;
+  try {
+    const iscrizione = await registrazione.pushManager.getSubscription();
+    if (iscrizione) await confermaIscrizione(iscrizione);
+  } catch {
+    // resta non confermata
+  }
+  disegna();
 }
 
 // «Notifiche attivate» solo dopo che il servizio ha salvato l'iscrizione.
@@ -264,7 +296,7 @@ async function attivaNotifiche() {
       userVisibleOnly: true,
       applicationServerKey: base64UrlInByte(server.vapid),
     });
-    await api('POST', '/api/push', JSON.stringify(iscrizione.toJSON()), 'application/json');
+    await confermaIscrizione(iscrizione);
     avvisa('Notifiche attivate.');
   } catch (errore) {
     avvisa(`Notifiche non attivate: ${errore.message}.`);
@@ -297,5 +329,6 @@ function collega() {
 
 collega();
 await registraServiceWorker();
+rimandaIscrizione(); // non aspetta: la pagina si disegna intanto, e la sezione sparisce alla conferma
 await aggiorna();
 setInterval(aggiorna, 20000);

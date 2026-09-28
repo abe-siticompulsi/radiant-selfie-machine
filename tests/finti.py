@@ -8,11 +8,16 @@ e dove la verifica il piano reale?
 
 from __future__ import annotations
 
+import base64
+import os
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from py_vapid import Vapid
+
 from rsm.config import Impostazioni
+from rsm.push import chiave_pubblica
 from rsm.telegram import TelegramError
 
 
@@ -76,6 +81,19 @@ class NotificheFinte:
     def a_persona(self, soprannome, titolo, testo, *, ttl):
         self.inviate.append({"soprannome": soprannome, "titolo": titolo, "testo": testo, "ttl": ttl})
         return 1
+
+
+def chiavi_push() -> dict[str, str]:
+    """Le chiavi di un'iscrizione come le manda il browser (`PushSubscription.toJSON()`):
+    `p256dh` è un punto P-256 non compresso di 65 byte, `auth` 16 byte, tutti e
+    due in base64url senza «=». Con un browser vero lo verifica il piano reale:
+    l'iscrizione che usa tests/reale/test_push_vero.py è passata da `iscrivi`."""
+    chiave = Vapid()
+    chiave.generate_keys()
+    return {
+        "p256dh": chiave_pubblica(chiave),
+        "auth": base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode(),
+    }
 
 
 class Orologio:

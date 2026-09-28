@@ -1,6 +1,9 @@
+import json
 import time
 
 import pytest
+
+from tests.finti import chiavi_push
 
 pytestmark = pytest.mark.e2e
 
@@ -53,6 +56,34 @@ def test_l_avviso_di_rete_sparisce_quando_il_servizio_risponde(in_rete, pagina):
     pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
     schermata(pagina, "invito").wait_for(state="visible")
     avviso.wait_for(state="hidden")
+
+
+def con_iscrizione_nel_browser(pagina, endpoint="https://push.example/e2e"):
+    """Il permesso vero, concesso a Chrome; l'iscrizione finta, perché Chrome
+    headless non ha un servizio push. Lo script entra dal protocollo di Chrome,
+    non dalla pagina: la CSP non lo riguarda."""
+    pagina.context.grant_permissions(["notifications"])
+    iscrizione = json.dumps({"endpoint": endpoint, "keys": chiavi_push()})
+    pagina.add_init_script(
+        script=f"PushManager.prototype.getSubscription = async () => "
+        f"({{ endpoint: {json.dumps(endpoint)}, toJSON: () => ({iscrizione}) }});"
+    )
+
+
+def test_all_apertura_l_iscrizione_del_browser_torna_al_servizio(in_rete, pagina):
+    con_iscrizione_nel_browser(pagina)
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    schermata(pagina, "nessun_giro").wait_for(state="visible")
+    assert aspetta(lambda: [i.endpoint for i in in_rete.store.iscrizioni_di("emi")] == ["https://push.example/e2e"])
+    assert aspetta(lambda: pagina.locator("#notifiche").is_hidden())
+
+
+def test_se_il_servizio_non_conferma_l_iscrizione_la_sezione_resta(in_rete, pagina):
+    con_iscrizione_nel_browser(pagina)
+    pagina.route("**/api/push", lambda richiesta: richiesta.fulfill(status=500))
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    pagina.locator("#attiva-notifiche").wait_for(state="visible")
+    assert pagina.locator("#notifiche").is_visible()
 
 
 def test_salta_rimanda_l_invito(in_rete, pagina):

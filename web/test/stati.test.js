@@ -10,6 +10,7 @@ import {
   esitoApertura,
   msAllaFineDelRinvio,
   schermata,
+  vistaNotifiche,
 } from '../static/stati.js';
 
 const ORA = Date.parse('2026-10-04T20:00:00Z');
@@ -136,6 +137,26 @@ test('msAllaFineDelRinvio', () => {
   assert.equal(msAllaFineDelRinvio(stato(), ORA), null);
   assert.equal(msAllaFineDelRinvio(stato({ rinvio_fino_a: '2026-10-04T20:00:05+00:00' }), ORA), 5000);
   assert.equal(msAllaFineDelRinvio(stato({ rinvio_fino_a: '2026-10-04T19:59:59+00:00' }), ORA), null);
+});
+
+test('le notifiche si danno per attive solo dopo la conferma del servizio', () => {
+  const attive = { possibile: true, permesso: 'granted', iscrizioneBrowser: true, confermataDalServizio: true };
+  const invito = { sezione: true, pulsante: true, testo: "Vuoi ricevere l'invito anche a pagina chiusa?" };
+  assert.deepEqual(vistaNotifiche(attive), { sezione: false, pulsante: false, testo: null });
+  // permesso e iscrizione del browser non bastano: il rinvio al servizio può essere fallito
+  assert.deepEqual(vistaNotifiche({ ...attive, confermataDalServizio: false }), invito);
+  assert.deepEqual(vistaNotifiche({ ...attive, iscrizioneBrowser: false }), invito);
+  assert.deepEqual(vistaNotifiche({ ...attive, permesso: 'default' }), invito);
+});
+
+test('le notifiche bloccate o impossibili', () => {
+  const niente = { possibile: false, permesso: null, iscrizioneBrowser: false, confermataDalServizio: false };
+  assert.deepEqual(vistaNotifiche(niente), { sezione: false, pulsante: false, testo: null });
+  assert.deepEqual(vistaNotifiche({ ...niente, possibile: true, permesso: 'denied' }), {
+    sezione: true,
+    pulsante: false,
+    testo: 'Le notifiche sono bloccate: si riattivano dalle impostazioni del browser.',
+  });
 });
 
 test('base64url in byte, con e senza padding', () => {
