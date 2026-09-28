@@ -27,9 +27,20 @@ CSP = (
 )
 
 
+class _StaticiDaRiconvalidare(StaticFiles):
+    """Dopo un aggiornamento l'app installata non deve usare `app.js` e
+    `stati.js` vecchi contro l'API nuova: `no-cache` fa chiedere ogni volta, e
+    con l'ETag la risposta a un file invariato è un 304 vuoto."""
+
+    def file_response(self, *args, **kwargs) -> Response:
+        risposta = super().file_response(*args, **kwargs)
+        risposta.headers["Cache-Control"] = "no-cache"
+        return risposta
+
+
 def crea_app(servizio: Servizio, *, cartella_web: Path, lifespan=None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-    app.mount("/static", StaticFiles(directory=cartella_web / "static"), name="static")
+    app.mount("/static", _StaticiDaRiconvalidare(directory=cartella_web / "static"), name="static")
 
     @app.exception_handler(ErroreServizio)
     async def _errore_servizio(_richiesta: Request, errore: ErroreServizio) -> JSONResponse:

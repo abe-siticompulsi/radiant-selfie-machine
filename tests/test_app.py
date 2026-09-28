@@ -85,8 +85,15 @@ def test_il_gettone_di_ctc_non_apre_la_pagina(client, persone):
     assert client.get(f"/p/{gettone}/sw.js").status_code == 404
 
 
-def test_i_file_statici(client):
-    assert client.get("/static/stati.js").status_code == 200
+def test_i_file_statici_si_riconvalidano_a_ogni_uso(client):
+    """Dopo un aggiornamento l'app installata non deve usare un app.js vecchio
+    contro l'API nuova: no-cache vuol dire «chiedi prima», e il 304 costa poco."""
+    risposta = client.get("/static/stati.js")
+    assert risposta.status_code == 200
+    assert risposta.headers["cache-control"] == "no-cache"
+    di_nuovo = client.get("/static/stati.js", headers={"If-None-Match": risposta.headers["etag"]})
+    assert di_nuovo.status_code == 304
+    assert di_nuovo.headers["cache-control"] == "no-cache"
 
 
 def test_aprire_il_giro(client, persone, notifiche, telegram):

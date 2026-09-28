@@ -148,6 +148,26 @@ def test_se_il_file_non_si_promuove_alla_prima_foto_non_resta_nulla(
     assert list(cartella.iterdir()) == []
 
 
+def test_un_ripristino_senza_effetto_lascia_traccia_nel_log(
+    servizio, persone, store, orologio, monkeypatch, caplog
+):
+    """Mentre il file non arrivava su disco è arrivata una versione più recente:
+    il ripristino giustamente non la tocca, e il log lo dice."""
+    giro_id = apri(servizio, persone)
+
+    def guasto_dopo_un_invio_piu_recente(*args, **kwargs):
+        store.salva_foto(giro_id, "emi", "in_attesa", "piu-recente", 1, orologio())
+        raise OSError("disco pieno")
+
+    monkeypatch.setattr(foto, "promuovi", guasto_dopo_un_invio_piu_recente)
+    with pytest.raises(OSError, match="disco pieno"):
+        servizio.ricevi_foto(chi(persone, "emi"), giro_id, jpeg())
+    assert store.foto(giro_id, "emi").sha256 == "piu-recente"
+    [avviso] = [r for r in caplog.records if r.name == "rsm.servizio"]
+    assert avviso.levelname == "WARNING"
+    assert "emi" in avviso.getMessage() and "non ripristinata" in avviso.getMessage()
+
+
 def test_una_foto_accettata_non_si_sostituisce_e_non_lascia_file(servizio, persone, impostazioni):
     giro_id = apri(servizio, persone)
     abe = chi(persone, "abe")

@@ -13,6 +13,7 @@ così resta traccia in un file che si rilegge.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,9 +108,18 @@ def _motivi(env: Mapping[str, str]) -> tuple[Motivo, ...]:
 
 
 def _contatto(env: Mapping[str, str]) -> str:
+    """Il «sub» di VAPID: il servizio push di Apple rifiuta un contatto vuoto."""
     contatto = _testo(env, "RSM_VAPID_CONTATTO")
-    if not contatto.startswith(("mailto:", "https://")):
-        raise ConfigurazioneErrata("RSM_VAPID_CONTATTO deve iniziare con mailto: o https://")
+    if contatto.startswith("mailto:"):
+        valido = re.fullmatch(r"[^@\s]+@[^@\s]+", contatto.removeprefix("mailto:")) is not None
+    elif contatto.startswith("https://"):
+        valido = len(contatto) > len("https://")
+    else:
+        valido = False
+    if not valido:
+        raise ConfigurazioneErrata(
+            "RSM_VAPID_CONTATTO deve essere mailto:<indirizzo con @> o https://<sito>"
+        )
     return contatto
 
 

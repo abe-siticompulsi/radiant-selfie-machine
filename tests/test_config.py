@@ -62,9 +62,19 @@ def test_un_gruppo_non_numerico():
         config.da_ambiente({**AMBIENTE, "RSM_GRUPPO_PROVA": "gruppo"})
 
 
-def test_il_contatto_vapid_deve_essere_mailto_o_https():
+@pytest.mark.parametrize(
+    "contatto", ["qualcuno@example.org", "mailto:", "mailto:qualcuno", "mailto:qualcuno@", "https://", "http://example.org"]
+)
+def test_il_contatto_vapid_deve_essere_un_indirizzo_vero(contatto):
+    """Il valore dell'esempio, «mailto:», non passa: il servizio push di Apple
+    rifiuta un «sub» non valido."""
     with pytest.raises(config.ConfigurazioneErrata, match="RSM_VAPID_CONTATTO"):
-        config.da_ambiente({**AMBIENTE, "RSM_VAPID_CONTATTO": "qualcuno@example.org"})
+        config.da_ambiente({**AMBIENTE, "RSM_VAPID_CONTATTO": contatto})
+
+
+@pytest.mark.parametrize("contatto", ["mailto:qualcuno@example.org", "https://example.org/contatti"])
+def test_contatti_vapid_validi(contatto):
+    assert config.da_ambiente({**AMBIENTE, "RSM_VAPID_CONTATTO": contatto}).vapid_contatto == contatto
 
 
 def test_il_rinvio_deve_durare_almeno_un_minuto():

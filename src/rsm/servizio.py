@@ -225,7 +225,16 @@ class Servizio:
             except OSError:
                 # Senza il file la riga racconterebbe una foto che non c'è:
                 # torna com'era, e l'errore risale (la pagina riproverà).
-                self._store.ripristina_foto(giro_id, persona.soprannome, nuova.versione, attuale)
+                if not self._store.ripristina_foto(
+                    giro_id, persona.soprannome, nuova.versione, attuale
+                ):
+                    log.warning(
+                        "foto di %s (giro %s, versione %s) non ripristinata: "
+                        "nel frattempo la riga è cambiata",
+                        persona.soprannome,
+                        giro_id,
+                        nuova.versione,
+                    )
                 raise
         finally:
             temporaneo.unlink(missing_ok=True)
