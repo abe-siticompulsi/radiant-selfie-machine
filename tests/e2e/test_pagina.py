@@ -41,6 +41,20 @@ def test_scatto_e_invio_fino_alla_foto_ricevuta(in_rete, pagina):
     assert aspetta(lambda: in_rete.telegram.di_tipo("manda_foto"))
 
 
+def test_l_avviso_di_rete_sparisce_quando_il_servizio_risponde(in_rete, pagina):
+    in_rete.servizio.apri_giro(in_rete.gio)
+    pagina.route("**/api/stato", lambda richiesta: richiesta.abort())
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    avviso = pagina.locator("#avviso")
+    avviso.wait_for(state="visible")
+    assert avviso.text_content() == "Non riesco a raggiungere il servizio: riprovo tra poco."
+    pagina.unroute("**/api/stato")
+    # Come allo sblocco del telefono; la pagina headless è visibile, quindi aggiorna.
+    pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    schermata(pagina, "invito").wait_for(state="visible")
+    avviso.wait_for(state="hidden")
+
+
 def test_salta_rimanda_l_invito(in_rete, pagina):
     in_rete.servizio.apri_giro(in_rete.gio)
     pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")

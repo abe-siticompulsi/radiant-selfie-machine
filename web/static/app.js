@@ -57,14 +57,19 @@ function avvisa(testo) {
   elemento.hidden = !testo;
 }
 
+// L'avviso di rete è vero solo finché il servizio non risponde: il primo
+// aggiornamento riuscito lo toglie, e lascia stare gli altri avvisi.
+const AVVISO_RETE = 'Non riesco a raggiungere il servizio: riprovo tra poco.';
+
 async function aggiorna() {
   try {
     server = await api('GET', '/api/stato');
     scarto = Date.parse(server.ora) - Date.now();
   } catch {
-    avvisa('Non riesco a raggiungere il servizio: riprovo tra poco.');
+    avvisa(AVVISO_RETE);
     return;
   }
+  if ($('avviso').textContent === AVVISO_RETE) avvisa('');
   disegna();
 }
 
