@@ -1,0 +1,48 @@
+:root {
+  color-scheme: dark;
+  --fondo: #1b1030;
+  --carta: #2b1a4a;
+  --testo: #f3eefc;
+  --tenue: #b9a9d6;
+  --accento: #f2c85a;
+  --accento-testo: #1b1030;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--fondo);
+  color: var(--testo);
+  font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+header h1 { font-size: 1.3rem; margin: 0; }
+header p { margin: 0.25rem 0 1.5rem; color: var(--tenue); }
+
+section { background: var(--carta); border-radius: 1rem; padding: 1.25rem; margin-bottom: 1rem; }
+.grande { font-size: 1.25rem; margin-top: 0; }
+.azioni { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
+
+button {
+  font: inherit;
+  color: var(--testo);
+  background: transparent;
+  border: 1px solid var(--tenue);
+  border-radius: 999px;
+  padding: 0.6rem 1.2rem;
+  cursor: pointer;
+}
+button.primario { background: var(--accento); border-color: var(--accento); color: var(--accento-testo); font-weight: 600; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+/* Anteprima e revisione a specchio, come uno specchio. La foto salvata no:
+   come fanno le fotocamere frontali dei telefoni. */
+video, #foto { width: 100%; border-radius: 0.75rem; background: #000; transform: scaleX(-1); }
+
+#avviso { color: var(--accento); }
+#pannello ul { list-style: none; padding: 0; margin: 1rem 0 0; }
+#pannello li { padding: 0.35rem 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }

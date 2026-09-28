@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b1a4a">
+  <title>Radiant Selfie Machine</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="/static/icona-192.png">
+  <link rel="apple-touch-icon" href="/static/icona-192.png">
+  <link rel="stylesheet" href="/static/stile.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Radiant Selfie Machine</h1>
+      <p id="chi"></p>
+    </header>
+
+    <section data-schermata="caricamento"><p>Un attimo…</p></section>
+
+    <section data-schermata="nessun_giro" hidden>
+      <p class="grande">Nessun giro aperto.</p>
+      <p>Quando il master apre il giro dei selfie, l'invito compare qui.</p>
+    </section>
+
+    <section data-schermata="invito" hidden>
+      <p class="grande">📸 È il momento del selfie per la miniatura!</p>
+      <div class="azioni">
+        <button id="scatta" class="primario">Scatta</button>
+        <button id="salta">Salta</button>
+      </div>
+    </section>
+
+    <section data-schermata="nuova_richiesta" hidden>
+      <p class="grande">Alberto chiede un'altra foto<span id="motivo"></span></p>
+      <div class="azioni"><button id="scatta-di-nuovo" class="primario">Scatta</button></div>
+    </section>
+
+    <section data-schermata="rinviato" hidden>
+      <p class="grande">D'accordo: te lo richiedo tra qualche minuto.</p>
+      <div class="azioni"><button id="scatta-ora">Scatta adesso</button></div>
+    </section>
+
+    <section data-schermata="anteprima" hidden>
+      <video id="video" autoplay playsinline muted></video>
+      <div class="azioni">
+        <button id="scatta-foto" class="primario">Scatta la foto</button>
+        <button id="annulla">Annulla</button>
+      </div>
+    </section>
+
+    <section data-schermata="revisione" hidden>
+      <img id="foto" alt="La foto appena scattata">
+      <div class="azioni">
+        <button id="invia" class="primario">Invia</button>
+        <button id="rifai">Rifai</button>
+      </div>
+    </section>
+
+    <section data-schermata="invio" hidden><p class="grande">Invio in corso…</p></section>
+
+    <section data-schermata="errore_invio" hidden>
+      <p class="grande">Invio non riuscito.</p>
+      <p>La foto è ancora qui: puoi riprovare. Se non va, puoi sempre mandarla su Telegram.</p>
+      <div class="azioni">
+        <button id="riprova" class="primario">Riprova</button>
+        <button id="lascia-perdere">Lascia perdere</button>
+      </div>
+    </section>
+
+    <section data-schermata="in_attesa" hidden>
+      <p class="grande">Foto ricevuta.</p>
+      <p>Alberto la guarda e ti fa sapere. Finché non ha deciso, puoi ancora rifarla.</p>
+      <div class="azioni"><button id="rifai-in-attesa">Rifai</button></div>
+    </section>
+
+    <section data-schermata="accettata" hidden>
+      <p class="grande">La tua foto è stata accettata. Grazie!</p>
+    </section>
+
+    <section data-schermata="fotocamera_negata" hidden>
+      <p class="grande">Non riesco ad accendere la fotocamera.</p>
+      <p>Controlla che il browser abbia il permesso di usarla (di solito dall'icona accanto all'indirizzo) e che nessun'altra applicazione la stia usando. Se non va, puoi sempre mandare la foto su Telegram.</p>
+      <div class="azioni">
+        <button id="riprova-fotocamera" class="primario">Riprova</button>
+        <button id="annulla-fotocamera">Annulla</button>
+      </div>
+    </section>
+
+    <p id="avviso" role="status" hidden></p>
+
+    <section id="notifiche" hidden>
+      <p id="notifiche-testo">Vuoi ricevere l'invito anche a pagina chiusa?</p>
+      <button id="attiva-notifiche">Attiva le notifiche</button>
+    </section>
+    <p id="suggerimento-ios" hidden>Su iPhone e iPad le notifiche arrivano solo se aggiungi questa pagina alla schermata Home: Condividi → Aggiungi alla schermata Home.</p>
+
+    <section id="pannello" hidden>
+      <h2>Il giro</h2>
+      <button id="apri-giro" class="primario">Apri il giro</button>
+      <p id="esito-giro" role="status"></p>
+      <ul id="stati"></ul>
+    </section>
+  </main>
+  <canvas id="tela" hidden></canvas>
+</body>
+</html>
