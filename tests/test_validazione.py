@@ -106,14 +106,36 @@ def test_un_motivo_troppo_lungo_si_riscrive(validatore, giro_id, store, telegram
     assert store.foto(giro_id, "emi").motivo == "mossa"
 
 
+DOMANDA_SUPERATA = (
+    "Questa domanda non vale più: la foto è stata sostituita o già decisa, "
+    "oppure aspetta la risposta alla domanda più recente."
+)
+
+
 def test_una_risposta_a_una_domanda_superata(validatore, giro_id, telegram):
     validatore.gestisci(tocco(pulsanti.dati_tocco(giro_id, "emi", 1, pulsanti.ALTRO)))
     domanda = ultima_domanda(telegram)
     validatore.gestisci(tocco(pulsanti.dati_tocco(giro_id, "emi", 1, pulsanti.ACCETTA)))
     validatore.gestisci(risposta("sfocata", domanda))
-    assert telegram.di_tipo("scrivi")[-1]["testo"] == (
-        "Nel frattempo quella foto è stata sostituita o già decisa: il motivo non serve più."
-    )
+    assert telegram.di_tipo("scrivi")[-1]["testo"] == DOMANDA_SUPERATA
+
+
+def test_dopo_un_doppio_altro_motivo_vale_la_domanda_piu_recente(validatore, giro_id, store, telegram):
+    """I pulsanti restano, di proposito: Alberto può toccare «Altro motivo…» due
+    volte. La foto resta in attesa, e aspetta la risposta alla seconda domanda."""
+    domande = []
+    for _ in range(2):
+        validatore.gestisci(tocco(pulsanti.dati_tocco(giro_id, "emi", 1, pulsanti.ALTRO)))
+        testo = telegram.di_tipo("chiedi_risposta")[-1]["testo"]
+        domande.append({"id": store.foto(giro_id, "emi").attesa_motivo, "testo": testo})
+    prima, seconda = domande
+    assert prima["id"] != seconda["id"]
+    validatore.gestisci(risposta("sfocata", prima))
+    assert store.foto(giro_id, "emi").stato == "in_attesa"
+    assert telegram.di_tipo("scrivi")[-1]["testo"] == DOMANDA_SUPERATA
+    validatore.gestisci(risposta("occhi chiusi", seconda))
+    foto_emi = store.foto(giro_id, "emi")
+    assert (foto_emi.stato, foto_emi.motivo) == ("da_rifare", "occhi chiusi")
 
 
 def test_i_messaggi_che_non_rispondono_alla_domanda_si_ignorano(validatore, giro_id, telegram):

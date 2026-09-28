@@ -359,8 +359,9 @@ class Servizio:
         """Il testo che Alberto ha scritto in risposta alla domanda `risposta_a`.
 
         `None` se quella domanda non aspetta più niente (foto sostituita o già
-        decisa). `regole.RegolaViolata` se il testo va riscritto: la foto resta
-        in attesa dello stesso motivo.
+        decisa, o una domanda più recente per la stessa foto).
+        `regole.RegolaViolata` se il testo va riscritto: la foto resta in attesa
+        dello stesso motivo.
         """
         in_attesa = self._store.foto_in_attesa_di_motivo(risposta_a)
         if in_attesa is None:

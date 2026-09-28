@@ -100,7 +100,8 @@ class Validatore:
             return
         if decisa is None:
             self._scrivi_ad_alberto(
-                "Nel frattempo quella foto è stata sostituita o già decisa: il motivo non serve più."
+                "Questa domanda non vale più: la foto è stata sostituita o già decisa, "
+                "oppure aspetta la risposta alla domanda più recente."
             )
             return
         self._servizio.dopo_decisione(decisa)
