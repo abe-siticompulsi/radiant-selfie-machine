@@ -63,6 +63,15 @@ test('la richiesta di un\'altra foto porta il motivo, se c\'è', () => {
   assert.deepEqual(schermata(senza, FASE_INIZIALE, ORA), { nome: 'nuova_richiesta', motivo: null });
 });
 
+test('la richiesta di un\'altra foto vince sul rinvio ancora in corso', () => {
+  // Salta, poi «Scatta adesso», poi Alberto chiede un'altra foto entro i 10 minuti.
+  const s = stato({
+    foto: { stato: 'da_rifare', sha256: 'x', motivo: 'sfocata' },
+    rinvio_fino_a: '2026-10-04T20:05:00+00:00',
+  });
+  assert.deepEqual(schermata(s, FASE_INIZIALE, ORA), { nome: 'nuova_richiesta', motivo: 'sfocata' });
+});
+
 test('le transizioni di uno scatto, con un invio fallito e ritentato', () => {
   let locale = FASE_INIZIALE;
   for (const [evento, attesa] of [

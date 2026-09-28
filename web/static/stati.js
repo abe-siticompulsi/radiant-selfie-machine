@@ -37,8 +37,9 @@ export function schermata(server, locale, oraMs) {
   if (foto?.stato === 'accettata') return { nome: 'accettata' };
   if (FASI_CHE_VINCONO.has(locale.fase)) return { nome: locale.fase };
   if (foto?.stato === 'in_attesa') return { nome: 'in_attesa' };
-  if (msAllaFineDelRinvio(server, oraMs) !== null) return { nome: 'rinviato' };
+  // Prima del rinvio: una richiesta arrivata dopo un «Salta» è la notizia più recente.
   if (foto?.stato === 'da_rifare') return { nome: 'nuova_richiesta', motivo: foto.motivo ?? null };
+  if (msAllaFineDelRinvio(server, oraMs) !== null) return { nome: 'rinviato' };
   return { nome: 'invito' };
 }
 
