@@ -31,6 +31,30 @@
 
 Il codice di questo piano è stato estratto ed eseguito così com'è, in una copia usa e getta, il 27/09/2026: 210 test veloci, 18 test della macchina a stati con Node e 3 prove in Chrome con la webcam finta, tutti verdi; gli 8 test del piano reale saltano dicendo quale variabile manca; `uvicorn --factory rsm.principale:costruisci` risponde su `/salute`, il ciclo del bot interroga il vero Telegram, e il token non compare nel log. La verifica ha trovato quattro difetti, già corretti qui: un test senza la fixture `persone`, un `.encode()` che ruff rifiuta, una prova in Chrome bloccata dalla CSP della pagina (il che dimostra che la CSP funziona), e Python non fissato a 3.12.
 
+## Deviazioni durante l'esecuzione
+
+- **Il ripristino della riga** (`Store.ripristina_foto`, `85e114d`, approvato da Alberto): se il file della foto non arriva su disco, la riga torna com'era, guardata sulla versione fallita.
+- **Il 404 al ruolo `ctc` su tutte le rotte `/p/{gettone}…`** (`persona_della_pagina`, `996f111`): pagina, manifest e service worker, come chiedono la spec §5 e §6. Il codice del piano non lo faceva.
+- **Gli errori di argomento di `rsm`** (comando o ruolo sconosciuto) restano ad argparse: codice 2 e messaggio su stderr, senza passare da `stampa`. Accettato da Alberto.
+- **La riga `Co-Authored-By`** nomina il modello che ha fatto il commit, non sempre quello scritto nei vincoli qui sopra.
+- **Il giro di correzioni dopo la revisione finale del ramo** (approvate da Alberto):
+
+| voce | commit | cosa |
+|---|---|---|
+| A1 | `52f6a70` | l'avviso di rete sparisce al primo `/api/stato` riuscito |
+| A2 | `eae0ed9` | le notifiche risultano attive solo dopo la conferma del servizio in questa sessione della pagina (`vistaNotifiche`) |
+| A3 | `67a4866` | `rsm persona revoca` toglie anche le iscrizioni push |
+| A4 | `438c213` | la guida: prima il certificato, poi il blocco Nginx; l'id del gruppo con `/start@<nome_del_bot>` |
+| B1 | `c112bea` | un 409 dopo una risposta persa è un successo se il servizio ha la foto della pagina (`esitoDopoConflitto`) |
+| B2 | `7448dae` | la risposta a una domanda del motivo superata dice il vero, anche dopo un doppio «Altro motivo…» |
+| B3 | `106a9c7` | la richiesta di un'altra foto vince sul rinvio in corso |
+| C1 | `a751fff` | `iscrivi` valida le chiavi push; un'iscrizione malformata non ferma le altre |
+| C2 | `09fc293` | il ciclo del bot sopravvive a ogni errore |
+| C3 | `e27ed6d` | un rinvio si segna solo per la scadenza notificata; un lucchetto intorno a «Apri il giro» (senza test concorrente: uno deterministico chiederebbe un'attesa vera) |
+| C4 | `f113f1e` | i motivi scritti valgono solo nella chat privata con Alberto |
+| D1–D4 | `4447ea6` | `/static` con `no-cache`, contatto VAPID vero, `web/test` fuori dall'immagine, log del ripristino senza effetto |
+| D5 | questo commit | questa sezione |
+
 ## Allineamenti alla spec fatti insieme a questo piano
 
 Scrivendo le interfacce sono emersi cinque dettagli che la spec lasciava impliciti. La spec è già stata aggiornata nello stesso commit di questo piano:
