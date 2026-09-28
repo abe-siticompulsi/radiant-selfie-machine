@@ -1,0 +1,23 @@
+services:
+  rsm:
+    build:
+      context: .
+      target: servizio
+    restart: unless-stopped
+    env_file: ./config/rsm.env
+    volumes:
+      - ./dati:/data
+      - ./config:/config:ro
+    ports:
+      # Solo il Nginx della macchina arriva qui: nessuna porta aperta verso fuori.
+      - "127.0.0.1:8470:8000"
+
+  prova:
+    profiles: ["prova"]
+    build:
+      context: .
+      target: prova
+    env_file: ./config/rsm.env
+    volumes:
+      - ./dati:/data
+      - ./config:/config:ro
