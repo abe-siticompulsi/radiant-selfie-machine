@@ -9,7 +9,8 @@ export const FASE_INIZIALE = Object.freeze({ fase: 'riposo' });
 
 const TRANSIZIONI = {
   riposo: { scatta: 'anteprima' },
-  anteprima: { scattata: 'revisione', negata: 'fotocamera_negata', annulla: 'riposo' },
+  anteprima: { scattata: 'revisione', conta: 'conto', negata: 'fotocamera_negata', annulla: 'riposo' },
+  conto: { scattata: 'revisione', ferma: 'anteprima', annulla: 'riposo', negata: 'fotocamera_negata' },
   revisione: { rifai: 'anteprima', invia: 'invio' },
   invio: { inviata: 'riposo', fallita: 'errore_invio', respinta: 'riposo' },
   errore_invio: { riprova: 'invio', lascia_perdere: 'riposo' },
@@ -35,6 +36,9 @@ export function schermata(server, locale, oraMs) {
   if (!server.giro) return { nome: 'nessun_giro' };
   const foto = server.foto;
   if (foto?.stato === 'accettata') return { nome: 'accettata' };
+  // Il conto alla rovescia si mostra come anteprima con il numero sopra: se fosse
+  // una schermata a parte, la fotocamera si spegnerebbe proprio prima dello scatto.
+  if (locale.fase === 'conto') return { nome: 'anteprima', conto: true };
   if (FASI_CHE_VINCONO.has(locale.fase)) return { nome: locale.fase };
   if (foto?.stato === 'in_attesa') return { nome: 'in_attesa' };
   // Prima del rinvio: una richiesta arrivata dopo un «Salta» è la notizia più recente.
@@ -118,4 +122,31 @@ export function base64UrlInByte(testo) {
 
 export function esadecimale(buffer) {
   return Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Il conto alla rovescia prima dello scatto (facoltativo, spec §3.3). La
+// preferenza vive nel browser di quel dispositivo: il servizio non ne sa nulla.
+export const SECONDI_CONTO = 3;
+const CHIAVE_CONTO = 'rsm.conto_alla_rovescia';
+
+// `archivio` è localStorage, o null quando il browser non lo concede. Ogni accesso
+// può fallire (finestra privata, dati del sito bloccati): allora vale «spento».
+export function leggiPreferenzaConto(archivio) {
+  try {
+    return archivio?.getItem(CHIAVE_CONTO) === '1';
+  } catch {
+    return false;
+  }
+}
+
+// Dice se la preferenza è stata salvata. Se no, l'interruttore vale per la
+// sessione della pagina.
+export function salvaPreferenzaConto(archivio, acceso) {
+  if (!archivio) return false;
+  try {
+    archivio.setItem(CHIAVE_CONTO, acceso ? '1' : '0');
+    return true;
+  } catch {
+    return false;
+  }
 }

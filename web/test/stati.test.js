@@ -3,13 +3,16 @@ import { test } from 'node:test';
 
 import {
   FASE_INIZIALE,
+  SECONDI_CONTO,
   base64UrlInByte,
   conTentativi,
   dopo,
   esadecimale,
   esitoApertura,
   esitoDopoConflitto,
+  leggiPreferenzaConto,
   msAllaFineDelRinvio,
+  salvaPreferenzaConto,
   schermata,
   vistaNotifiche,
 } from '../static/stati.js';
@@ -185,4 +188,53 @@ test('base64url in byte, con e senza padding', () => {
 
 test('esadecimale', () => {
   assert.equal(esadecimale(new Uint8Array([0, 15, 255]).buffer), '000fff');
+});
+
+test('il conto alla rovescia è una fase fra anteprima e revisione', () => {
+  assert.equal(dopo(in_fase('anteprima'), 'conta').fase, 'conto');
+  assert.equal(dopo(in_fase('conto'), 'scattata').fase, 'revisione');
+  assert.equal(dopo(in_fase('conto'), 'ferma').fase, 'anteprima');
+  assert.equal(dopo(in_fase('conto'), 'annulla').fase, 'riposo');
+  assert.equal(dopo(in_fase('conto'), 'negata').fase, 'fotocamera_negata');
+});
+
+test('il conto parte solo dall\'anteprima, e una volta sola', () => {
+  assert.throws(() => dopo(FASE_INIZIALE, 'conta'), /non ammesso/);
+  assert.throws(() => dopo(in_fase('conto'), 'conta'), /non ammesso/);
+});
+
+test('durante il conto la schermata resta l\'anteprima, così la fotocamera non si spegne', () => {
+  const s = stato({ foto: { stato: 'in_attesa', sha256: 'x', motivo: null } });
+  assert.deepEqual(schermata(s, in_fase('conto'), ORA), { nome: 'anteprima', conto: true });
+  assert.deepEqual(schermata(s, in_fase('anteprima'), ORA), { nome: 'anteprima' });
+});
+
+test('una foto accettata vince anche sul conto', () => {
+  const s = stato({ foto: { stato: 'accettata', sha256: 'x', motivo: null } });
+  assert.equal(schermata(s, in_fase('conto'), ORA).nome, 'accettata');
+});
+
+test('tre secondi', () => {
+  assert.equal(SECONDI_CONTO, 3);
+});
+
+test('la preferenza del conto si ricorda nell\'archivio del browser', () => {
+  const dati = new Map();
+  const archivio = { getItem: (k) => dati.get(k) ?? null, setItem: (k, v) => dati.set(k, v) };
+  assert.equal(leggiPreferenzaConto(archivio), false);
+  assert.equal(salvaPreferenzaConto(archivio, true), true);
+  assert.equal(leggiPreferenzaConto(archivio), true);
+  salvaPreferenzaConto(archivio, false);
+  assert.equal(leggiPreferenzaConto(archivio), false);
+});
+
+test('senza archivio, o con uno che rifiuta, il conto è spento e la scelta vale per la sessione', () => {
+  const ostile = {
+    getItem: () => { throw new Error('SecurityError'); },
+    setItem: () => { throw new Error('QuotaExceededError'); },
+  };
+  assert.equal(leggiPreferenzaConto(null), false);
+  assert.equal(leggiPreferenzaConto(ostile), false);
+  assert.equal(salvaPreferenzaConto(null, true), false);
+  assert.equal(salvaPreferenzaConto(ostile, true), false);
 });

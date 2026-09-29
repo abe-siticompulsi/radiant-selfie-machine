@@ -185,6 +185,7 @@ git commit -m "page state: an optional countdown phase and its remembered prefer
 - Test: `tests/e2e/test_pagina.py`
 
 **Interfaces:**
+- Consumes (dal servizio, solo nella prova in Chrome): `Servizio.ricevi_foto`, `Servizio.decidi`, `Store.persona_da_impronta`, `Store.ultimo_giro`, `gettoni.impronta`, `tests.immagini.jpeg`.
 - Consumes (Task 1): `SECONDI_CONTO`, `leggiPreferenzaConto(archivio)`, `salvaPreferenzaConto(archivio, acceso)`, l'evento `conta`/`ferma`, e `schermata(...).conto`.
 - Produces: gli elementi `#numero-conto`, `#ferma-conto`, `#interruttore-conto`, `#etichetta-conto`, che le prove in Chrome usano.
 
@@ -238,14 +239,39 @@ def test_l_interruttore_si_ricorda_sul_dispositivo(in_rete, pagina):
     pagina.click("#scatta")
     schermata(pagina, "anteprima").wait_for(state="visible")
     assert pagina.locator("#interruttore-conto").is_checked()
+
+
+def test_se_a_meta_conto_la_foto_viene_accettata_non_si_scatta(in_rete, pagina):
+    """Il servizio cambia stato durante il conto (qui Alberto accetta la foto che
+    il giocatore sta rifacendo): la pagina mostra l'accettazione, il timer si
+    ferma, e allo zero non compare nessun avviso falso sulla fotocamera."""
+    in_rete.servizio.apri_giro(in_rete.gio)
+    emi = in_rete.store.persona_da_impronta(gettoni.impronta(in_rete.emi))
+    ricevuta = in_rete.servizio.ricevi_foto(emi, in_rete.store.ultimo_giro().id, jpeg())
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    schermata(pagina, "in_attesa").wait_for(state="visible")
+    pagina.click("#rifai-in-attesa")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    in_rete.servizio.decidi(ricevuta.foto.giro_id, "emi", ricevuta.foto.versione, "accettata", None)
+    pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")  # rilegge lo stato
+    schermata(pagina, "accettata").wait_for(state="visible")
+    time.sleep(3.5)  # oltre lo zero del conto
+    assert schermata(pagina, "accettata").is_visible()
+    assert not pagina.locator("#avviso").is_visible()
 ```
+
+Per questa prova, in cima al file aggiungi `from rsm import gettoni` e `from tests.immagini import jpeg` (accanto all'import esistente di `tests.finti`).
 
 Senza l'interruttore lo scatto resta immediato: lo prova già `test_scatto_e_invio_fino_alla_foto_ricevuta`, perché ogni prova parte da un browser nuovo, con l'interruttore spento.
 
 - [ ] **Step 2: lancia le prove e verifica che falliscano**
 
 Run: `uv run pytest -m e2e -q`
-Expected: le 3 prove nuove FAIL (`#interruttore-conto` non esiste); le altre passano.
+Expected: le 4 prove nuove FAIL (`#interruttore-conto` non esiste); le altre passano.
 
 - [ ] **Step 3: la pagina e lo stile**
 
@@ -316,7 +342,21 @@ import {
 
 2. Dopo `let timerRinvio = null;` aggiungi `let timerConto = null;`.
 
-3. In `disegna()`, subito dopo la riga `$('motivo').textContent = …;`, aggiungi:
+3. In `disegna()`, la prima riga (`const vista = schermata(server, locale, oraServer());`) diventa:
+
+```js
+  let vista = schermata(server, locale, oraServer());
+  // Se durante il conto il servizio cambia stato (foto accettata, giro chiuso), la
+  // schermata non è più il conto: si ferma il timer e si torna all'anteprima, così
+  // allo zero non scatta niente e nessun avviso falso compare.
+  if (locale.fase === 'conto' && !vista.conto) {
+    fermaTimerConto();
+    locale = dopo(locale, 'ferma');
+    vista = schermata(server, locale, oraServer());
+  }
+```
+
+   e subito dopo la riga `$('motivo').textContent = …;` aggiungi:
 
 ```js
   const inConto = Boolean(vista.conto);
@@ -443,7 +483,7 @@ In `docs/differenze-fra-test-e-realta.md`, aggiungi in fondo alla tabella:
 - [ ] **Step 6: lancia tutto e verifica**
 
 Run: `uv run pytest -m e2e -q && node --test "web/test/*.test.js" && uv run pytest -q && uv run ruff check src tests strumenti`
-Expected: e2e 10 passed (le 7 di prima più le 3 nuove); node tutti `ok`; suite veloce invariata e verde; ruff pulito.
+Expected: e2e 11 passed (le 7 di prima più le 4 nuove); node tutti `ok`; suite veloce invariata e verde; ruff pulito.
 
 - [ ] **Step 7: commit**
 
