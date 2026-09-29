@@ -57,6 +57,17 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
    l'invito da sola; chiusa, lo mostra quando si tocca la notifica.
 3. **Scatto.** Anteprima della webcam con «Scatta» e «Salta». Dopo lo scatto la
    foto si rivede: «Invia» o «Rifai».
+   **Conto alla rovescia, facoltativo.** Nell'anteprima un interruttore
+   «Conto alla rovescia (3 secondi)», spento di partenza e ricordato nel browser
+   di quel dispositivo (il servizio non ne sa nulla; se il browser non può
+   salvarlo, vale per la sessione). Acceso, «Scatta la foto» mostra sopra
+   l'anteprima 3, 2, 1 e poi scatta; durante il conto il pulsante diventa
+   «Ferma» (torna all'anteprima, fotocamera accesa), «Annulla» esce come sempre,
+   e l'interruttore non si tocca. **Muto**: il microfono dei giocatori è aperto
+   su Discord e Craig registra. Se la pagina va sullo sfondo a metà conto, il
+   conto si ferma e si torna all'anteprima; se allo zero la fotocamera non ha
+   ancora un'immagine, si torna all'anteprima con «La fotocamera non è ancora
+   pronta: riprova».
 4. **Salta.** Il servizio annota un rinvio di X minuti; allo scadere manda di
    nuovo il push, e la pagina aperta ripropone l'invito. Senza limite.
 5. **Validazione.** Ogni foto ricevuta arriva ad Alberto in privato dal bot. I
@@ -123,7 +134,8 @@ HTML, CSS e JavaScript senza framework e senza build.
 - `stati.js` — la macchina a stati, senza dipendenze dal browser: nessun giro,
   invito, rinviato, anteprima, revisione, invio, errore di invio, in attesa di
   validazione, accettata, nuova foto richiesta (con il motivo, se c'è),
-  fotocamera negata.
+  fotocamera negata; più la fase locale «conto alla rovescia», che si mostra
+  come anteprima con il numero sopra, così la fotocamera resta accesa.
 - `app.js` — `getUserMedia`, scatto su canvas, JPEG, invio, polling, pulsante
   «Attiva le notifiche» (il permesso va chiesto da un gesto dell'utente:
   Safari lo impone).
@@ -362,6 +374,7 @@ Un modulo nuovo, `giro.py`: il client HTTP del servizio (timeout 5 secondi),
 | Durata di un giro | 48 ore | servizio |
 | Soglia sotto cui «Apri il giro» non riapre | 12 ore | servizio |
 | Polling della pagina | 20 secondi | pagina |
+| Conto alla rovescia prima dello scatto (facoltativo) | 3 secondi, spento di partenza | pagina |
 | Tentativi automatici di invio | 3 | pagina |
 | Dimensione massima di una foto | 8 MB | servizio |
 | Cancellazione delle foto | 30 giorni dopo la chiusura del giro | servizio |
