@@ -3,7 +3,9 @@ import time
 
 import pytest
 
+from rsm import gettoni
 from tests.finti import chiavi_push
+from tests.immagini import jpeg
 
 pytestmark = pytest.mark.e2e
 
@@ -121,3 +123,175 @@ def test_salta_rimanda_l_invito(in_rete, pagina):
     schermata(pagina, "rinviato").wait_for(state="visible")
     giro = in_rete.store.ultimo_giro()
     assert in_rete.store.rinvio(giro.id, "emi") is not None
+
+
+def _in_anteprima(in_rete, pagina):
+    in_rete.servizio.apri_giro(in_rete.gio)
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    schermata(pagina, "invito").wait_for(state="visible")
+    pagina.click("#scatta")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+
+
+def _registra_i_numeri_del_conto(pagina):
+    """Annota ogni numero che la pagina scrive in #numero-conto: la sequenza si
+    legge alla fine, senza campionare a intervalli (che sarebbe instabile)."""
+    pagina.evaluate(
+        """() => {
+            window.numeriDelConto = [];
+            const numero = document.getElementById('numero-conto');
+            new MutationObserver(() => window.numeriDelConto.push(numero.textContent))
+                .observe(numero, { childList: true, characterData: true, subtree: true });
+        }"""
+    )
+
+
+def test_il_conto_alla_rovescia_aspetta_tre_secondi_e_scatta(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    _registra_i_numeri_del_conto(pagina)
+    inizio = time.monotonic()
+    pagina.click("#scatta-foto")
+    numero = pagina.locator("#numero-conto")
+    numero.wait_for(state="visible")
+    assert numero.inner_text() == "3"
+    assert pagina.locator("#ferma-conto").is_visible()
+    assert not pagina.locator("#scatta-foto").is_visible()
+    assert pagina.locator("#interruttore-conto").is_disabled()
+    schermata(pagina, "revisione").wait_for(state="visible", timeout=6000)
+    assert time.monotonic() - inizio >= 2.5
+    assert pagina.evaluate("window.numeriDelConto") == ["3", "2", "1"]
+
+
+def test_ferma_riporta_all_anteprima_senza_scattare(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    pagina.click("#ferma-conto")
+    pagina.locator("#numero-conto").wait_for(state="hidden")
+    assert pagina.locator("#scatta-foto").is_visible()
+    assert pagina.evaluate("document.getElementById('video').videoWidth") > 0  # la fotocamera resta accesa
+    time.sleep(3.5)  # oltre i tre secondi: il timer fermato non deve scattare
+    assert schermata(pagina, "anteprima").is_visible()
+    assert not schermata(pagina, "revisione").is_visible()
+
+
+def test_l_interruttore_si_ricorda_sul_dispositivo(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.reload()
+    schermata(pagina, "invito").wait_for(state="visible")
+    pagina.click("#scatta")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert pagina.locator("#interruttore-conto").is_checked()
+
+
+def test_se_a_meta_conto_la_foto_viene_accettata_non_si_scatta(in_rete, pagina):
+    """Il servizio cambia stato durante il conto (qui Alberto accetta la foto che
+    il giocatore sta rifacendo): la pagina mostra l'accettazione, il timer si
+    ferma, e allo zero non compare nessun avviso falso sulla fotocamera."""
+    in_rete.servizio.apri_giro(in_rete.gio)
+    emi = in_rete.store.persona_da_impronta(gettoni.impronta(in_rete.emi))
+    ricevuta = in_rete.servizio.ricevi_foto(emi, in_rete.store.ultimo_giro().id, jpeg())
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    schermata(pagina, "in_attesa").wait_for(state="visible")
+    pagina.click("#rifai-in-attesa")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    in_rete.servizio.decidi(ricevuta.foto.giro_id, "emi", ricevuta.foto.versione, "accettata", None)
+    pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")  # rilegge lo stato
+    schermata(pagina, "accettata").wait_for(state="visible")
+    time.sleep(3.5)  # oltre lo zero del conto
+    assert schermata(pagina, "accettata").is_visible()
+    assert not pagina.locator("#avviso").is_visible()
+
+
+def test_l_interruttore_spento_si_ricorda_spento(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.reload()
+    schermata(pagina, "invito").wait_for(state="visible")
+    pagina.click("#scatta")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert pagina.locator("#interruttore-conto").is_checked()
+    pagina.uncheck("#interruttore-conto")
+    pagina.reload()
+    schermata(pagina, "invito").wait_for(state="visible")
+    pagina.click("#scatta")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert not pagina.locator("#interruttore-conto").is_checked()
+
+
+def test_annulla_durante_il_conto_torna_all_invito_senza_scattare(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    pagina.click("#annulla")
+    schermata(pagina, "invito").wait_for(state="visible")
+    time.sleep(4)  # oltre i tre secondi: il conto annullato non deve scattare
+    assert schermata(pagina, "invito").is_visible()
+    assert not schermata(pagina, "revisione").is_visible()
+
+
+def test_pagina_sullo_sfondo_a_meta_conto_ferma_il_conto(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    # Il Chrome dei test è sempre visibile: si simula il passaggio sullo sfondo.
+    pagina.evaluate(
+        "Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});"
+        "document.dispatchEvent(new Event('visibilitychange'))"
+    )
+    pagina.locator("#numero-conto").wait_for(state="hidden")
+    assert schermata(pagina, "anteprima").is_visible()
+    assert pagina.locator("#scatta-foto").is_visible()
+    time.sleep(4)  # oltre i tre secondi: il conto fermato non deve scattare
+    assert schermata(pagina, "anteprima").is_visible()
+    assert not schermata(pagina, "revisione").is_visible()
+
+
+def test_un_doppio_tocco_su_ferma_non_fa_ripartire_il_conto(in_rete, pagina):
+    """«Ferma» sta dove stava «Scatta la foto»: il secondo tocco di un doppio tocco
+    cade sul pulsante dello scatto e non deve far ripartire il conto."""
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    pagina.dblclick("#ferma-conto")
+    time.sleep(4)  # oltre i tre secondi: un conto ripartito avrebbe già scattato
+    assert schermata(pagina, "anteprima").is_visible()
+    assert pagina.locator("#numero-conto").is_hidden()
+    assert not schermata(pagina, "revisione").is_visible()
+
+
+def test_l_avviso_di_fotocamera_non_pronta_non_resta_dopo_uno_scatto_riuscito(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    # La fotocamera perde l'immagine a metà conto: allo zero non c'è niente da scattare.
+    pagina.evaluate("document.getElementById('video').srcObject = null")
+    assert pagina.evaluate("document.getElementById('video').videoWidth") == 0
+    avviso = pagina.locator("#avviso")
+    avviso.wait_for(state="visible", timeout=6000)
+    assert avviso.text_content() == "La fotocamera non è ancora pronta: riprova."
+    assert schermata(pagina, "anteprima").is_visible()
+    assert pagina.locator("#scatta-foto").is_visible()
+    # Si riaccende la fotocamera (Annulla, poi Scatta) e si scatta davvero.
+    pagina.click("#annulla")
+    schermata(pagina, "invito").wait_for(state="visible")
+    pagina.click("#scatta")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    assert avviso.is_hidden(), avviso.text_content()  # un nuovo scatto toglie l'avviso vecchio
+    schermata(pagina, "revisione").wait_for(state="visible", timeout=6000)
+    assert avviso.is_hidden(), avviso.text_content()

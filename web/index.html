@@ -44,11 +44,19 @@
     </section>
 
     <section data-schermata="anteprima" hidden>
-      <video id="video" autoplay playsinline muted></video>
+      <div class="inquadratura">
+        <video id="video" autoplay playsinline muted></video>
+        <p id="numero-conto" class="numero-conto" role="timer" aria-live="assertive" hidden></p>
+      </div>
       <div class="azioni">
         <button id="scatta-foto" class="primario">Scatta la foto</button>
+        <button id="ferma-conto" class="primario" hidden>Ferma</button>
         <button id="annulla">Annulla</button>
       </div>
+      <label class="interruttore">
+        <input type="checkbox" id="interruttore-conto">
+        <span id="etichetta-conto">Conto alla rovescia</span>
+      </label>
     </section>
 
     <section data-schermata="revisione" hidden>

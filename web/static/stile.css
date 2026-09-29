@@ -46,3 +46,21 @@ video, #foto { width: 100%; border-radius: 0.75rem; background: #000; transform:
 #avviso { color: var(--accento); }
 #pannello ul { list-style: none; padding: 0; margin: 1rem 0 0; }
 #pannello li { padding: 0.35rem 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+
+/* Il numero del conto alla rovescia, sopra l'anteprima. */
+.inquadratura { position: relative; }
+.numero-conto {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 7rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 1.5rem rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+.interruttore { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; color: var(--tenue); }
+.interruttore input { width: 1.2rem; height: 1.2rem; }

@@ -2,13 +2,16 @@
 import {
   ETICHETTE_PANNELLO,
   FASE_INIZIALE,
+  SECONDI_CONTO,
   base64UrlInByte,
   conTentativi,
   dopo,
   esadecimale,
   esitoApertura,
   esitoDopoConflitto,
+  leggiPreferenzaConto,
   msAllaFineDelRinvio,
+  salvaPreferenzaConto,
   schermata,
   vistaNotifiche,
 } from './stati.js';
@@ -24,6 +27,7 @@ let flusso = null;
 let accensione = null;
 let fotoPronta = null;
 let timerRinvio = null;
+let timerConto = null;
 let registrazione = null;
 let endpointConfermato = null; // l'iscrizione che il servizio ha salvato in questa sessione della pagina
 
@@ -97,11 +101,24 @@ function vai(evento) {
 }
 
 function disegna() {
-  const vista = schermata(server, locale, oraServer());
+  let vista = schermata(server, locale, oraServer());
+  // Se durante il conto il servizio cambia stato (foto accettata, giro chiuso), la
+  // schermata non è più il conto: si ferma il timer e si torna all'anteprima, così
+  // allo zero non scatta niente e nessun avviso falso compare.
+  if (locale.fase === 'conto' && !vista.conto) {
+    fermaTimerConto();
+    locale = dopo(locale, 'ferma');
+    vista = schermata(server, locale, oraServer());
+  }
   for (const sezione of document.querySelectorAll('[data-schermata]')) {
     sezione.hidden = sezione.dataset.schermata !== vista.nome;
   }
   $('motivo').textContent = vista.motivo ? `: ${vista.motivo}` : '.';
+  const inConto = Boolean(vista.conto);
+  $('numero-conto').hidden = !inConto;
+  $('scatta-foto').hidden = inConto;
+  $('ferma-conto').hidden = !inConto;
+  $('interruttore-conto').disabled = inConto;
   if (vista.nome === 'anteprima') accendiFotocamera();
   else spegniFotocamera();
   if (server) {
@@ -116,6 +133,9 @@ function disegna() {
 
 // --- fotocamera e scatto
 
+// La fotocamera serve nell'anteprima e durante il conto alla rovescia.
+const fotocameraServe = () => locale.fase === 'anteprima' || locale.fase === 'conto';
+
 function accendiFotocamera() {
   if (flusso || accensione) return;
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -125,7 +145,7 @@ function accendiFotocamera() {
   accensione = navigator.mediaDevices
     .getUserMedia({ video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false })
     .then(async (nuovo) => {
-      if (locale.fase !== 'anteprima') {
+      if (!fotocameraServe()) {
         nuovo.getTracks().forEach((traccia) => traccia.stop());
         return;
       }
@@ -135,7 +155,7 @@ function accendiFotocamera() {
       await video.play();
     })
     .catch(() => {
-      if (locale.fase === 'anteprima') vai('negata');
+      if (fotocameraServe()) vai('negata');
     })
     .finally(() => {
       accensione = null;
@@ -151,7 +171,7 @@ function spegniFotocamera() {
 
 async function scattaFoto() {
   const video = $('video');
-  if (!video.videoWidth) return; // la fotocamera non ha ancora un'immagine
+  if (!video.videoWidth) return false; // la fotocamera non ha ancora un'immagine
   const tela = $('tela');
   tela.width = video.videoWidth;
   tela.height = video.videoHeight;
@@ -159,11 +179,79 @@ async function scattaFoto() {
   const blob = await new Promise((risolvi) => tela.toBlob(risolvi, 'image/jpeg', 0.9));
   if (!blob) {
     avvisa('Non sono riuscito a fare la foto: riprova.');
-    return;
+    return false;
   }
   fotoPronta = blob;
   $('foto').src = URL.createObjectURL(blob);
   vai('scattata');
+  return true;
+}
+
+// --- conto alla rovescia (facoltativo). Muto di proposito: il microfono dei
+// giocatori è aperto su Discord, e Craig registra.
+
+function archivioLocale() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function fermaTimerConto() {
+  clearInterval(timerConto);
+  timerConto = null;
+}
+
+// Dopo «Ferma» il pulsante dello scatto torna al suo posto: il secondo tocco di un
+// doppio tocco lo colpirebbe e farebbe ripartire il conto.
+const PAUSA_DOPO_FERMA_MS = 500;
+let fermatoAlle = -Infinity;
+
+function premiScatta() {
+  if (performance.now() - fermatoAlle < PAUSA_DOPO_FERMA_MS) return;
+  avvisa(''); // un nuovo scatto toglie l'avviso del precedente: non era più vero
+  if ($('interruttore-conto').checked) avviaConto();
+  else scattaFoto();
+}
+
+function avviaConto() {
+  let resto = SECONDI_CONTO;
+  $('numero-conto').textContent = String(resto);
+  vai('conta');
+  if (locale.fase !== 'conto') return;
+  fermaTimerConto();
+  timerConto = setInterval(() => {
+    if (locale.fase !== 'conto') {
+      fermaTimerConto();
+      return;
+    }
+    resto -= 1;
+    if (resto > 0) {
+      $('numero-conto').textContent = String(resto);
+      return;
+    }
+    fermaTimerConto();
+    scattaAlloZero();
+  }, 1000);
+}
+
+// Allo zero si scatta solo se la fotocamera ha un'immagine: altrimenti si torna
+// all'anteprima e lo si dice, senza fingere una foto.
+async function scattaAlloZero() {
+  if (!$('video').videoWidth) {
+    vai('ferma');
+    avvisa('La fotocamera non è ancora pronta: riprova.');
+    return;
+  }
+  const riuscita = await scattaFoto();
+  if (!riuscita && locale.fase === 'conto') vai('ferma');
+}
+
+function fermaConto() {
+  fermatoAlle = performance.now();
+  fermaTimerConto();
+  vai('ferma');
 }
 
 // «Foto ricevuta» compare solo se il servizio restituisce l'impronta dei byte
@@ -325,8 +413,15 @@ function collega() {
     $(id).addEventListener('click', () => vai('scatta'));
   }
   $('salta').addEventListener('click', salta);
-  $('scatta-foto').addEventListener('click', scattaFoto);
-  $('annulla').addEventListener('click', () => vai('annulla'));
+  $('scatta-foto').addEventListener('click', premiScatta);
+  $('annulla').addEventListener('click', () => {
+    fermaTimerConto();
+    vai('annulla');
+  });
+  $('ferma-conto').addEventListener('click', fermaConto);
+  $('interruttore-conto').addEventListener('change', () => {
+    salvaPreferenzaConto(archivioLocale(), $('interruttore-conto').checked);
+  });
   $('invia').addEventListener('click', () => inviaFoto('invia'));
   $('rifai').addEventListener('click', () => vai('rifai'));
   $('riprova').addEventListener('click', () => inviaFoto('riprova'));
@@ -336,11 +431,15 @@ function collega() {
   $('attiva-notifiche').addEventListener('click', attivaNotifiche);
   $('apri-giro').addEventListener('click', apriGiro);
   document.addEventListener('visibilitychange', () => {
+    // Non si scatta una foto che la persona non sta guardando.
+    if (document.visibilityState === 'hidden' && locale.fase === 'conto') fermaConto();
     if (document.visibilityState === 'visible') aggiorna();
   });
 }
 
 collega();
+$('etichetta-conto').textContent = `Conto alla rovescia (${SECONDI_CONTO} secondi)`;
+$('interruttore-conto').checked = leggiPreferenzaConto(archivioLocale());
 await registraServiceWorker();
 rimandaIscrizione(); // non aspetta: la pagina si disegna intanto, e la sezione sparisce alla conferma
 await aggiorna();
