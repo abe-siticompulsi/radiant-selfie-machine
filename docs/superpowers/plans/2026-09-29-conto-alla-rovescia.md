@@ -383,6 +383,8 @@ e dentro `accendiFotocamera` sostituisci `if (locale.fase !== 'anteprima') {` co
 
 5. `scattaFoto` dice se ha scattato: `if (!video.videoWidth) return;` diventa `if (!video.videoWidth) return false;`, il `return;` dopo l'avviso «Non sono riuscito a fare la foto: riprova.» diventa `return false;`, e dopo `vai('scattata');` aggiungi `return true;`.
 
+> Nota (ultimo giro): `scattaFoto` ha anche un `try/catch` attorno alla codifica (`drawImage`, `toBlob`): un errore del browser mostra lo stesso avviso del blob nullo e restituisce `false`, così `scattaAlloZero` fa tornare all'anteprima. `avviaConto` azzera `codifica` prima di cominciare, perché una codifica rimasta in sospeso non blocchi il conto seguente.
+
 6. Subito dopo `scattaFoto` aggiungi:
 
 ```js

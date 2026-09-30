@@ -71,6 +71,8 @@ function avvisa(testo) {
 const AVVISO_RETE = 'Non riesco a raggiungere il servizio: riprovo tra poco.';
 // Descrive l'anteprima dove è comparso: su un'altra schermata non è più vero.
 const AVVISO_NON_PRONTA = 'La fotocamera non è ancora pronta: riprova.';
+// La codifica della foto non è riuscita (il browser non ha dato un blob, o ha lanciato).
+const AVVISO_FOTO_FALLITA = 'Non sono riuscito a fare la foto: riprova.';
 
 async function aggiorna() {
   try {
@@ -192,20 +194,26 @@ async function scattaFoto() {
   const fase = locale.fase;
   const video = $('video');
   if (!video.videoWidth) return false; // la fotocamera non ha ancora un'immagine
-  const tela = $('tela');
-  tela.width = video.videoWidth;
-  tela.height = video.videoHeight;
-  tela.getContext('2d').drawImage(video, 0, 0);
-  const blob = await new Promise((risolvi) => tela.toBlob(risolvi, 'image/jpeg', 0.9));
-  // Se durante la codifica la persona ha lasciato la fase (Annulla, pagina sullo
-  // sfondo), la foto non serve più: non si va in revisione a cose decise.
-  if (locale.fase !== fase) return false;
-  if (!blob) {
-    avvisa('Non sono riuscito a fare la foto: riprova.');
+  try {
+    const tela = $('tela');
+    tela.width = video.videoWidth;
+    tela.height = video.videoHeight;
+    tela.getContext('2d').drawImage(video, 0, 0);
+    const blob = await new Promise((risolvi) => tela.toBlob(risolvi, 'image/jpeg', 0.9));
+    // Se durante la codifica la persona ha lasciato la fase (Annulla, pagina sullo
+    // sfondo), la foto non serve più: non si va in revisione a cose decise.
+    if (locale.fase !== fase) return false;
+    if (!blob) {
+      avvisa(AVVISO_FOTO_FALLITA);
+      return false;
+    }
+    fotoPronta = blob;
+    $('foto').src = URL.createObjectURL(blob);
+  } catch {
+    // Il browser può lanciare (memoria, tela troppo grande): la pagina non resta a metà.
+    avvisa(AVVISO_FOTO_FALLITA);
     return false;
   }
-  fotoPronta = blob;
-  $('foto').src = URL.createObjectURL(blob);
   vai('scattata');
   return true;
 }
@@ -241,6 +249,7 @@ function premiScatta() {
 
 function avviaConto() {
   let resto = SECONDI_CONTO;
+  codifica = false; // una codifica rimasta in sospeso di un conto precedente non conta più
   vai('conta');
   if (locale.fase !== 'conto') return;
   // Il «3» si scrive dopo che `disegna` ha reso visibile la regione aria-live: una

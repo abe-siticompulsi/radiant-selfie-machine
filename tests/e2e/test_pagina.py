@@ -532,3 +532,78 @@ def test_un_invio_ritentato_dopo_un_5xx_va_ancora_al_giro_in_cui_la_foto_e_stata
     assert in_rete.store.foto(nuovo[0], "emi") is None
     assert in_rete.store.foto(vecchio, "emi") is None
     assert pagina.locator("#avviso").text_content() == "Foto non inviata: il giro è chiuso."
+
+
+_GUASTI_DELLA_CODIFICA = {
+    "toblob-lancia": "HTMLCanvasElement.prototype.toBlob = function () { throw new Error('guasto'); };",
+    "toblob-nullo": "HTMLCanvasElement.prototype.toBlob = function (richiamo) { richiamo(null); };",
+    "toblob-muto": "HTMLCanvasElement.prototype.toBlob = function () { window.codificaIniziata = true; };",
+    "drawimage-lancia": "CanvasRenderingContext2D.prototype.drawImage = function () { throw new Error('guasto'); };",
+}
+
+
+def _guasta_la_codifica(pagina, guasto):
+    """Fa fallire la codifica della foto come potrebbe farla fallire il browser
+    (memoria, tela troppo grande): `toBlob` che lancia, che dà null o che non
+    risponde mai, oppure `drawImage` che lancia. `_ripara_la_codifica` rimette il
+    `toBlob` vero."""
+    pagina.evaluate(
+        "() => { window.codificaIniziata = false; window.toBlobVero = HTMLCanvasElement.prototype.toBlob; "
+        + _GUASTI_DELLA_CODIFICA[guasto]
+        + " }"
+    )
+
+
+def _ripara_la_codifica(pagina):
+    pagina.evaluate("() => { HTMLCanvasElement.prototype.toBlob = window.toBlobVero; }")
+
+
+@pytest.mark.parametrize(
+    ("guasto", "con_conto"),
+    [
+        ("toblob-lancia", False),
+        ("toblob-lancia", True),
+        ("toblob-nullo", False),
+        ("toblob-nullo", True),
+        ("drawimage-lancia", False),
+    ],
+    ids=["toBlob-lancia", "toBlob-lancia-con-conto", "toBlob-nullo", "toBlob-nullo-con-conto", "drawImage-lancia"],
+)
+def test_se_la_codifica_della_foto_fallisce_si_resta_all_anteprima_con_un_avviso(in_rete, pagina, guasto, con_conto):
+    """Un errore del browser nella codifica non lascia la pagina a metà: niente
+    revisione con una foto che non c'è, l'avviso lo dice, e si può riprovare."""
+    _in_anteprima(in_rete, pagina)
+    if con_conto:
+        pagina.check("#interruttore-conto")
+    _guasta_la_codifica(pagina, guasto)
+    pagina.click("#scatta-foto")
+    avviso = pagina.locator("#avviso")
+    avviso.wait_for(state="visible", timeout=6000)  # con il conto, dopo i tre secondi
+    assert avviso.text_content() == "Non sono riuscito a fare la foto: riprova."
+    assert schermata(pagina, "anteprima").is_visible()
+    assert pagina.locator("#scatta-foto").is_visible()
+    assert pagina.locator("#ferma-conto").is_hidden()
+    assert pagina.locator("#numero-conto").is_hidden()
+    assert not schermata(pagina, "revisione").is_visible()
+
+
+def test_se_la_codifica_non_risponde_mai_il_conto_seguente_mostra_numero_e_ferma(in_rete, pagina):
+    """Allo zero `toBlob` non risponde: restano solo «Annulla». Il conto che si fa
+    dopo (la codifica è tornata a funzionare) deve mostrare numero e «Ferma» come
+    sempre, non ereditare lo stato «sto codificando» del tentativo rimasto in sospeso."""
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    _guasta_la_codifica(pagina, "toblob-muto")
+    pagina.click("#scatta-foto")
+    assert aspetta(lambda: pagina.evaluate("window.codificaIniziata"), secondi=6)
+    assert pagina.locator("#numero-conto").is_hidden()
+    pagina.click("#annulla")
+    schermata(pagina, "invito").wait_for(state="visible")
+    pagina.click("#scatta")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    _ripara_la_codifica(pagina)
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible", timeout=2000)
+    assert pagina.locator("#ferma-conto").is_visible()
+    schermata(pagina, "revisione").wait_for(state="visible", timeout=6000)
