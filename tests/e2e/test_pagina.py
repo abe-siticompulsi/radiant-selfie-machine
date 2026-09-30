@@ -422,6 +422,27 @@ def _riparte_dall_invito(in_rete, pagina):
     _invito_con_la_fotocamera_spenta(pagina)
 
 
+# Dice solo ciò che è verificato: il giro della foto non è più quello attuale, e la foto non si
+# può più mandare. Non dice «non è partita» né «prima dell'invio»: dopo un invio non riuscito la
+# foto può essere arrivata, con la risposta persa.
+AVVISO_FOTO_PERSA = "Il giro di questa foto si è chiuso: non si può più mandare."
+
+
+def _dopo_n_letture_dello_stato(pagina, n):
+    """Per un `with`: esce quando è arrivata la n-esima risposta di `/api/stato` da
+    quando si è entrati. Dopo un invio respinto la pagina decide cosa scrivere solo
+    dopo aver riletto lo stato: guardare l'avviso prima darebbe una prova che passa
+    anche sul codice sbagliato."""
+    letture = []
+
+    def predicato(risposta):
+        if risposta.url.endswith("/api/stato"):
+            letture.append(risposta)
+        return len(letture) == n
+
+    return pagina.expect_response(predicato, timeout=8000)
+
+
 def _chiudi_e_riapri_il_giro(in_rete):
     """Come «Apri il giro» a più di 12 ore dal precedente: il vecchio si chiude e
     ne nasce uno nuovo nello stesso blocco, senza che la pagina rilegga in mezzo
@@ -465,6 +486,7 @@ def test_se_nell_anteprima_il_giro_cambia_senza_che_la_pagina_lo_veda_si_riparte
     _chiudi_e_riapri_il_giro(in_rete)
     _rileggi_lo_stato(pagina)
     _invito_con_la_fotocamera_spenta(pagina)
+    assert pagina.locator("#avviso").is_hidden()  # nell'anteprima non c'è nessuna foto da perdere
 
 
 def test_se_a_meta_conto_il_giro_cambia_senza_che_la_pagina_lo_veda_si_riparte_dall_invito(in_rete, pagina):
@@ -479,6 +501,7 @@ def test_se_a_meta_conto_il_giro_cambia_senza_che_la_pagina_lo_veda_si_riparte_d
     assert schermata(pagina, "invito").is_visible()
     assert not schermata(pagina, "revisione").is_visible()
     assert pagina.locator("#numero-conto").is_hidden()
+    assert pagina.locator("#avviso").is_hidden()  # a metà conto la foto non c'è ancora
 
 
 def test_se_nella_revisione_il_giro_cambia_la_foto_vecchia_non_va_nel_giro_nuovo(in_rete, pagina):
@@ -489,9 +512,12 @@ def test_se_nella_revisione_il_giro_cambia_la_foto_vecchia_non_va_nel_giro_nuovo
     _rileggi_lo_stato(pagina)
     _invito_con_la_fotocamera_spenta(pagina)
     assert not schermata(pagina, "revisione").is_visible()
+    avviso = pagina.locator("#avviso")
+    assert avviso.text_content() == AVVISO_FOTO_PERSA  # la foto scattata non si può più mandare, e lo si dice
     # La persona riparte da capo: la foto nuova, scattata nel giro nuovo, va nel giro nuovo.
     pagina.click("#scatta")
     schermata(pagina, "anteprima").wait_for(state="visible")
+    assert avviso.is_hidden(), avviso.text_content()  # «questa foto» non descrive più l'anteprima
     assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
     pagina.click("#scatta-foto")
     schermata(pagina, "revisione").wait_for(state="visible")
@@ -499,6 +525,7 @@ def test_se_nella_revisione_il_giro_cambia_la_foto_vecchia_non_va_nel_giro_nuovo
     schermata(pagina, "in_attesa").wait_for(state="visible")
     assert in_rete.store.foto(nuovo, "emi").stato == "in_attesa"
     assert in_rete.store.foto(vecchio, "emi") is None
+    assert avviso.is_hidden(), avviso.text_content()  # con la foto nuova l'avviso della vecchia non c'è più
 
 
 def test_un_invio_ritentato_dopo_un_5xx_va_ancora_al_giro_in_cui_la_foto_e_stata_scattata(in_rete, pagina):
@@ -522,17 +549,10 @@ def test_un_invio_ritentato_dopo_un_5xx_va_ancora_al_giro_in_cui_la_foto_e_stata
         else:
             richiesta.continue_()
 
-    letture = []
-
-    def dopo_il_410(risposta):
-        # La prima lettura dello stato è quella fra i due tentativi, la seconda segue il 410:
-        # solo dopo di essa la pagina decide se scrivere l'avviso (l'invito compare già a «respinta»).
-        if risposta.url.endswith("/api/stato"):
-            letture.append(risposta)
-        return len(letture) == 2
-
     pagina.route("**/api/giro/*/foto", primo_tentativo_fallisce)
-    with pagina.expect_response(dopo_il_410, timeout=8000):
+    # La prima lettura dello stato è quella fra i due tentativi, la seconda segue il 410:
+    # solo dopo di essa la pagina decide cosa scrivere (l'invito compare già a «respinta»).
+    with _dopo_n_letture_dello_stato(pagina, 2):
         pagina.click("#invia")
     _invito_con_la_fotocamera_spenta(pagina)  # 410 del giro vecchio: «respinta», e l'invito del giro nuovo
     pagina.wait_for_timeout(300)  # la decisione sull'avviso viene subito dopo quella risposta
@@ -542,8 +562,8 @@ def test_un_invio_ritentato_dopo_un_5xx_va_ancora_al_giro_in_cui_la_foto_e_stata
     assert "GET stato" in richieste[posizioni[0] : posizioni[1]]
     assert in_rete.store.foto(nuovo[0], "emi") is None
     assert in_rete.store.foto(vecchio, "emi") is None
-    # «Foto non inviata: il giro è chiuso» parla del giro vecchio: sull'invito del giro nuovo non descrive la schermata.
-    assert pagina.locator("#avviso").is_hidden(), pagina.locator("#avviso").text_content()
+    # Il servizio ha detto 410 (giro chiuso) e ora ne mostra un altro: la foto è persa, ed è verificato.
+    assert pagina.locator("#avviso").text_content() == AVVISO_FOTO_PERSA
 
 
 _GUASTI_DELLA_CODIFICA = {
@@ -622,12 +642,14 @@ def test_se_la_codifica_non_risponde_mai_il_conto_seguente_mostra_numero_e_ferma
 
 
 @pytest.mark.parametrize("durante_l_invio", [False, True], ids=["dopo-l-errore", "durante-l-invio"])
-def test_un_invio_non_riuscito_di_un_giro_che_non_c_e_piu_non_lascia_avvisi_sull_invito(
+def test_un_invio_non_riuscito_di_un_giro_che_non_c_e_piu_dice_solo_che_la_foto_e_persa(
     in_rete, pagina, durante_l_invio
 ):
     """Tre 5xx di fila: «Invio non riuscito» descrive la schermata dell'errore, non
-    l'invito di un giro nuovo. Il giro cambia dopo l'errore (la pagina lo vede al
-    primo aggiornamento) oppure durante l'invio (che non si interrompe)."""
+    l'invito di un giro nuovo, dove resta solo l'avviso della foto persa (non «non è
+    partita»: la foto può essere arrivata e la risposta persa). Il giro cambia dopo
+    l'errore (la pagina lo vede al primo aggiornamento) oppure durante l'invio (che
+    non si interrompe)."""
     _in_anteprima(in_rete, pagina)
     pagina.click("#scatta-foto")
     schermata(pagina, "revisione").wait_for(state="visible")
@@ -650,7 +672,7 @@ def test_un_invio_non_riuscito_di_un_giro_che_non_c_e_piu_non_lascia_avvisi_sull
         nuovo.append(_chiudi_e_riapri_il_giro(in_rete)[1])
         _rileggi_lo_stato(pagina)
         _invito_con_la_fotocamera_spenta(pagina)
-    assert avviso.is_hidden(), avviso.text_content()
+    assert avviso.text_content() == AVVISO_FOTO_PERSA
     assert in_rete.store.foto(nuovo[0], "emi") is None
 
 
@@ -776,3 +798,121 @@ def test_l_avviso_di_un_invio_respinto_non_resta_sull_invito_del_giro_dopo(in_re
     _rileggi_lo_stato(pagina)
     schermata(pagina, "invito").wait_for(state="visible", timeout=3000)
     assert avviso.is_hidden(), f"sull'invito del giro nuovo: {avviso.text_content()!r}"
+
+
+def test_se_il_giro_si_chiude_con_una_foto_in_revisione_la_pagina_dice_che_la_foto_e_persa(in_rete, pagina):
+    """Il giro scade (o si chiude) senza uno nuovo mentre la foto è in revisione: la
+    schermata è «nessun giro», e il messaggio dice perché la foto non c'è più."""
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    giro = in_rete.store.ultimo_giro().id
+    _chiudi_il_giro(in_rete)
+    _rileggi_lo_stato(pagina)
+    schermata(pagina, "nessun_giro").wait_for(state="visible", timeout=3000)
+    assert pagina.locator("#avviso").text_content() == AVVISO_FOTO_PERSA
+    assert in_rete.store.foto(giro, "emi") is None
+
+
+def test_se_il_giro_cambia_prima_di_invia_la_foto_e_persa_e_lo_si_dice(in_rete, pagina):
+    """Il caso delle 12 ore con la foto in revisione e la pagina ignara: «Invia» va al
+    giro vecchio, il servizio risponde 410 e la pagina vede un giro nuovo. La foto è
+    persa, e il 410 lo verifica."""
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    vecchio, nuovo = _chiudi_e_riapri_il_giro(in_rete)  # la pagina non lo sa ancora
+    with _dopo_n_letture_dello_stato(pagina, 1):
+        pagina.click("#invia")
+    _invito_con_la_fotocamera_spenta(pagina)
+    pagina.wait_for_timeout(300)  # la decisione sull'avviso viene subito dopo quella risposta
+    assert pagina.locator("#avviso").text_content() == AVVISO_FOTO_PERSA
+    assert in_rete.store.foto(vecchio, "emi") is None
+    assert in_rete.store.foto(nuovo, "emi") is None
+
+
+def test_se_dopo_un_409_il_giro_cambia_la_pagina_non_dice_che_la_foto_e_persa(in_rete, pagina):
+    """409: la foto vecchia era già stata accettata nel giro vecchio, quando era ancora
+    aperto. Se poi il giro cambia, «questa foto non si può più mandare» sarebbe falso
+    (quella accettata è arrivata): la pagina tace."""
+    giro = in_rete.servizio.apri_giro(in_rete.gio)["giro"]["id"]
+    emi = in_rete.store.persona_da_impronta(gettoni.impronta(in_rete.emi))
+    ricevuta = in_rete.servizio.ricevi_foto(emi, giro, jpeg())
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    schermata(pagina, "in_attesa").wait_for(state="visible")
+    pagina.click("#rifai-in-attesa")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    in_rete.servizio.decidi(giro, "emi", ricevuta.foto.versione, "accettata", None)  # la pagina non lo sa
+
+    def risposta_409_poi_giro_nuovo(richiesta):
+        risposta = richiesta.fetch()  # il 409 vero: il giro è ancora aperto
+        _chiudi_e_riapri_il_giro(in_rete)
+        richiesta.fulfill(response=risposta)
+
+    pagina.route("**/api/giro/*/foto", risposta_409_poi_giro_nuovo)
+    with _dopo_n_letture_dello_stato(pagina, 2):  # la lettura dopo il 409, poi l'aggiornamento
+        pagina.click("#invia")
+    _invito_con_la_fotocamera_spenta(pagina)
+    pagina.wait_for_timeout(300)  # la decisione sull'avviso viene subito dopo quella risposta
+    assert pagina.locator("#avviso").is_hidden(), pagina.locator("#avviso").text_content()
+
+
+def test_se_la_foto_era_arrivata_il_messaggio_non_dice_che_non_e_partita(in_rete, pagina):
+    """Il primo invio arriva e il servizio lo salva, ma la risposta si perde; gli altri due
+    tentativi cadono per la rete: «Invio non riuscito». Poi il giro cambia. La pagina non
+    sa se la foto è arrivata, quindi dice solo che il giro si è chiuso e la foto non si può
+    più mandare: vero in ogni caso."""
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    vecchio = in_rete.store.ultimo_giro().id
+    tentativi = []
+
+    def risposta_persa_poi_rete_giu(richiesta):
+        tentativi.append(1)
+        if len(tentativi) == 1:
+            richiesta.fetch()  # il servizio salva la foto
+        richiesta.abort()
+
+    pagina.route("**/api/giro/*/foto", risposta_persa_poi_rete_giu)
+    pagina.click("#invia")
+    schermata(pagina, "errore_invio").wait_for(state="visible", timeout=8000)
+    assert in_rete.store.foto(vecchio, "emi").stato == "in_attesa"  # la foto è arrivata
+    _chiudi_e_riapri_il_giro(in_rete)
+    _rileggi_lo_stato(pagina)
+    _invito_con_la_fotocamera_spenta(pagina)
+    assert pagina.locator("#avviso").text_content() == AVVISO_FOTO_PERSA
+
+
+def test_la_foto_persa_si_dice_anche_con_l_avviso_di_rete_a_schermo(in_rete, pagina):
+    """Il giro cambia durante l'invio (la pagina lo vede), poi una lettura dello stato
+    fallisce (avviso di rete) e i tentativi non arrivano. La ripartenza avviene dentro
+    `vai('fallita')`, senza passare da `aggiorna`, che toglierebbe l'avviso di rete: il
+    messaggio della foto persa prende il suo posto invece di restare muto."""
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    visto = []
+
+    def rete_giu(richiesta):
+        if not visto:
+            visto.append(_chiudi_e_riapri_il_giro(in_rete)[1])
+            _rileggi_lo_stato(pagina)  # riuscita: la pagina vede il giro nuovo
+            pagina.wait_for_timeout(200)
+            pagina.route("**/api/stato", lambda r: r.abort())
+            _rileggi_lo_stato(pagina)  # fallita: avviso di rete
+        richiesta.abort()
+
+    pagina.route("**/api/giro/*/foto", rete_giu)
+    pagina.click("#invia")
+    _invito_con_la_fotocamera_spenta(pagina, timeout=8000)  # dopo i tre tentativi
+    avviso = pagina.locator("#avviso")
+    assert avviso.text_content() == AVVISO_FOTO_PERSA
+    # Quando la rete torna, un aggiornamento riuscito toglie solo l'avviso di rete: questo resta.
+    pagina.unroute("**/api/stato")
+    _rileggi_lo_stato(pagina)
+    pagina.wait_for_timeout(300)
+    assert avviso.text_content() == AVVISO_FOTO_PERSA

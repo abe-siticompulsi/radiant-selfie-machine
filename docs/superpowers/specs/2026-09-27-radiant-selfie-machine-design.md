@@ -78,7 +78,18 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
    il servizio (con un giro nuovo, dall'invito), spegne la fotocamera e scarta la
    foto non inviata. Un invio già cominciato non si interrompe. Una foto scattata
    non va mai in un giro diverso: l'invio, tentativi automatici e «Riprova»
-   compresi, è legato al giro in cui la foto è stata scattata.
+   compresi, è legato al giro in cui la foto è stata scattata. Se una foto
+   scattata e non ancora inviata (da rivedere, o con l'invio non riuscito) si
+   perde perché il giro si chiude o ne arriva uno nuovo, la pagina lo dice: «Il
+   giro di questa foto si è chiuso: non si può più mandare.» Il messaggio compare
+   anche se il servizio rifiuta l'invio con un 410 (giro chiuso) e mostra un giro
+   diverso; se non c'è nessun giro nuovo compare invece «Foto non inviata: il
+   giro è chiuso.»; con un 409 (la foto è già stata accettata nel giro vecchio)
+   e un giro diverso la pagina tace. Il messaggio sparisce quando la persona comincia a scattarne
+   una nuova. Dice solo ciò che è verificato: il giro della foto non è più quello
+   attuale e la foto non si può più mandare. Non dice che non sia partita, né che
+   il giro si sia chiuso «prima» dell'invio: dopo un invio non riuscito la foto
+   può essere arrivata e la risposta essersi persa.
 4. **Salta.** Il servizio annota un rinvio di X minuti; allo scadere manda di
    nuovo il push, e la pagina aperta ripropone l'invito. Senza limite.
 5. **Validazione.** Ogni foto ricevuta arriva ad Alberto in privato dal bot. I

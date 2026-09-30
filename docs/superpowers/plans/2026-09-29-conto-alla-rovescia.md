@@ -387,6 +387,8 @@ e dentro `accendiFotocamera` sostituisci `if (locale.fase !== 'anteprima') {` co
 
 > Nota (dopo la revisione): la guardia di `scattaFoto` dopo l'`await` confronta l'oggetto `locale` preso all'inizio (l'identità), non il nome della fase: un conto annullato e uno nuovo hanno lo stesso nome. Lo stesso in `scattaAlloZero`, che non ha più il `finally`: se la fase è cambiata lascia stare `codifica` e «Ferma», che sono del conto nuovo. In `disegna`, `giroVisto` tiene il giro dell'ultimo stato disegnato: quando cambia, l'avviso (tranne quello di rete) si toglie, anche a riposo.
 
+> Nota (foto persa): `fotoPersa(prima, poi)` in `stati.js` dice se la ripartenza di `faseDelGiro` ha buttato via una foto scattata e non inviata (`revisione`, `errore_invio`). In quel caso `disegna` scrive `AVVISO_FOTO_PERSA` («Il giro di questa foto si è chiuso: non si può più mandare.»), dopo la pulizia di `giroVisto`, e prende il posto anche dell'avviso di rete (la ripartenza può venire da `vai('fallita')`, che non passa da `aggiorna`). Dice solo ciò che è verificato: non «non è partita» né «prima dell'invio», perché dopo un invio non riuscito la foto può essere arrivata. Lo stesso messaggio compare nel ramo 409/410 di `inviaFoto` per un 410 con un giro diverso (il servizio stesso ha detto che il giro è chiuso); con un 410 e nessun giro nuovo resta «Foto non inviata: il giro è chiuso.»; per un 409 la pagina tace. `disegna` lo toglie quando la schermata diventa `anteprima`.
+
 6. Subito dopo `scattaFoto` aggiungi:
 
 ```js

@@ -10,6 +10,7 @@ import {
   esitoApertura,
   esitoDopoConflitto,
   faseDelGiro,
+  fotoPersa,
   leggiPreferenzaConto,
   msAllaFineDelRinvio,
   salvaPreferenzaConto,
@@ -75,6 +76,11 @@ const AVVISO_NON_PRONTA = 'La fotocamera non è ancora pronta: riprova.';
 // La codifica della foto non è riuscita (il browser non ha dato un blob, o ha lanciato).
 const AVVISO_FOTO_FALLITA = 'Non sono riuscito a fare la foto: riprova.';
 const AVVISI_DELL_ANTEPRIMA = [AVVISO_NON_PRONTA, AVVISO_FOTO_FALLITA];
+// Dice solo ciò che è verificato: il giro della foto non è più quello attuale, e la foto non si
+// può più mandare. Non dice «non è partita» né «prima dell'invio»: dopo un invio non riuscito la
+// foto può essere arrivata, con la risposta persa. Parla della foto persa: sparisce quando la
+// persona ne comincia una nuova.
+const AVVISO_FOTO_PERSA = 'Il giro di questa foto si è chiuso: non si può più mandare.';
 
 async function aggiorna() {
   try {
@@ -115,6 +121,7 @@ function disegna() {
   // mai nel giro nuovo) e la schermata la decide il servizio. Un aggiornamento
   // fallito non passa da qui: `server` resta quello di prima.
   const delGiro = faseDelGiro(locale, server);
+  const persa = fotoPersa(locale, delGiro);
   if (delGiro !== locale) {
     fermaTimerConto();
     fotoPronta = null;
@@ -127,6 +134,11 @@ function disegna() {
     if (giroVisto !== undefined && $('avviso').textContent !== AVVISO_RETE) avvisa('');
     giroVisto = giroOra;
   }
+  // Una foto scattata e non inviata che la ripartenza ha buttato via: lo si dice, dopo la
+  // pulizia di sopra (che altrimenti lo cancellerebbe subito). Prende il posto anche dell'avviso
+  // di rete: la ripartenza può venire da `vai('fallita')`, che non passa da `aggiorna`, e il
+  // messaggio non deve restare muto; l'avviso di rete torna al prossimo aggiornamento fallito.
+  if (persa) avvisa(AVVISO_FOTO_PERSA);
   let vista = schermata(server, locale, oraServer());
   // Nello stesso giro il servizio può ancora cambiare stato sotto l'anteprima o il
   // conto (foto accettata): la schermata non è più l'anteprima, si ferma il timer e
@@ -141,6 +153,7 @@ function disegna() {
   }
   $('motivo').textContent = vista.motivo ? `: ${vista.motivo}` : '.';
   if (vista.nome !== 'anteprima' && AVVISI_DELL_ANTEPRIMA.includes($('avviso').textContent)) avvisa('');
+  if (vista.nome === 'anteprima' && $('avviso').textContent === AVVISO_FOTO_PERSA) avvisa('');
   const inConto = Boolean(vista.conto);
   // Allo zero la foto è già scattata: niente più numero né «Ferma» mentre si codifica.
   // `disegna` riscrive `hidden` a ogni giro, quindi lo stato sta in `codifica`.
@@ -333,10 +346,15 @@ async function inviaFoto(evento) {
       fotoPronta = null;
       vai(esito);
       await aggiorna();
-      // Il motivo riguarda la foto di quel giro: se ora il servizio ne mostra un altro,
-      // sul suo invito non descriverebbe la schermata.
+      // Il motivo riguarda la foto di quel giro: se ora il servizio ne mostra un altro, sul suo
+      // invito non descriverebbe la schermata. Un 410 con un giro nuovo dice però che la foto è
+      // persa, ed è verificato (il servizio stesso ha detto che il giro è chiuso); un 409 no: la
+      // foto può essere stata accettata nel giro vecchio, e «persa» sarebbe falso.
       const altroGiro = server?.giro && server.giro.id !== giro;
-      if (esito === 'respinta' && !altroGiro) avvisa(`Foto non inviata: ${errore.message}.`);
+      if (esito === 'respinta') {
+        if (!altroGiro) avvisa(`Foto non inviata: ${errore.message}.`);
+        else if (errore.stato === 410) avvisa(AVVISO_FOTO_PERSA);
+      }
       return;
     }
     vai('fallita');

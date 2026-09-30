@@ -11,6 +11,7 @@ import {
   esitoApertura,
   esitoDopoConflitto,
   faseDelGiro,
+  fotoPersa,
   leggiPreferenzaConto,
   msAllaFineDelRinvio,
   salvaPreferenzaConto,
@@ -295,4 +296,23 @@ test('riposo resta riposo, con qualunque stato del servizio', () => {
   for (const server of [stato(), stato({ giro: GIRO_NUOVO }), stato({ giro: null }), null]) {
     assert.equal(faseDelGiro(FASE_INIZIALE, server), FASE_INIZIALE);
   }
+});
+
+test('una foto scattata e non inviata si perde solo se la ripartenza la butta via', () => {
+  const nuovo = stato({ giro: GIRO_NUOVO });
+  const perde = (locale, server) => fotoPersa(locale, faseDelGiro(locale, server));
+  // Da rivedere, o con l'invio non riuscito: la foto c'è e non si sa se è partita.
+  assert.equal(perde(nel_giro('revisione'), nuovo), true);
+  assert.equal(perde(nel_giro('errore_invio'), nuovo), true);
+  assert.equal(perde(nel_giro('revisione'), stato({ giro: null })), true);
+  // Stesso giro: niente ripartenza, niente foto persa.
+  assert.equal(perde(nel_giro('revisione'), stato()), false);
+  assert.equal(perde(nel_giro('errore_invio'), stato()), false);
+  // Anteprima, conto, fotocamera negata: non c'è niente da perdere.
+  for (const fase of ['anteprima', 'conto', 'fotocamera_negata']) {
+    assert.equal(perde(nel_giro(fase), nuovo), false, fase);
+  }
+  // Un invio in volo non riparte, e a riposo non c'è niente.
+  assert.equal(perde(nel_giro('invio'), nuovo), false);
+  assert.equal(perde(FASE_INIZIALE, nuovo), false);
 });

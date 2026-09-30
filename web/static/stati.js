@@ -42,6 +42,15 @@ export function faseDelGiro(locale, server) {
   return (server?.giro?.id ?? null) === locale.giro ? locale : FASE_INIZIALE;
 }
 
+const FASI_CON_UNA_FOTO = new Set(['revisione', 'errore_invio']);
+
+// La ripartenza di `faseDelGiro` (`poi` è una fase diversa da `prima`) butta via una
+// foto scattata e non inviata? Da rivedere, o con l'invio non riuscito: sì. Nell'anteprima,
+// nel conto e con la fotocamera negata non c'è niente da perdere; durante l'invio non si riparte.
+export function fotoPersa(prima, poi) {
+  return poi !== prima && FASI_CON_UNA_FOTO.has(prima.fase);
+}
+
 export function msAllaFineDelRinvio(server, oraMs) {
   if (!server?.rinvio_fino_a) return null;
   const resto = Date.parse(server.rinvio_fino_a) - oraMs;
