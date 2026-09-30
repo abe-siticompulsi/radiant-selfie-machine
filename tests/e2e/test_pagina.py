@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -390,3 +391,51 @@ def test_l_avviso_di_fotocamera_non_pronta_non_resta_dopo_uno_scatto_riuscito(in
     assert avviso.is_hidden(), avviso.text_content()  # un nuovo scatto toglie l'avviso vecchio
     schermata(pagina, "revisione").wait_for(state="visible", timeout=6000)
     assert avviso.is_hidden(), avviso.text_content()
+
+
+def _chiudi_il_giro(in_rete):
+    """Come quando il giro scade o il master ne apre uno nuovo, ma subito: il
+    servizio lo dà per chiuso."""
+    in_rete.store.chiudi_giro(in_rete.store.ultimo_giro().id, datetime.now(UTC) - timedelta(seconds=1))
+
+
+def _rileggi_lo_stato(pagina):
+    """Come al ritorno sulla pagina, o al polling: la pagina rilegge lo stato."""
+    pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+
+
+def _riparte_dall_invito(in_rete, pagina):
+    """Il giro si chiude con la pagina aperta e se ne apre uno nuovo: la persona
+    non ha chiesto la fotocamera, quindi ricompare l'invito e la fotocamera è spenta."""
+    _chiudi_il_giro(in_rete)
+    _rileggi_lo_stato(pagina)
+    schermata(pagina, "nessun_giro").wait_for(state="visible", timeout=3000)
+    in_rete.servizio.apri_giro(in_rete.gio)
+    _rileggi_lo_stato(pagina)
+    schermata(pagina, "invito").wait_for(state="visible", timeout=3000)
+    assert not schermata(pagina, "anteprima").is_visible()
+    assert pagina.evaluate("document.getElementById('video').srcObject") is None  # fotocamera spenta
+
+
+def test_se_a_meta_conto_il_giro_si_chiude_con_un_giro_nuovo_si_riparte_dall_invito(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    _riparte_dall_invito(in_rete, pagina)
+
+
+def test_se_nell_anteprima_il_giro_si_chiude_con_un_giro_nuovo_si_riparte_dall_invito(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    _riparte_dall_invito(in_rete, pagina)
+
+
+def test_un_guasto_di_rete_nell_anteprima_non_butta_fuori_dall_anteprima(in_rete, pagina):
+    """Un aggiornamento che non riesce non dice niente sul servizio: lo stato
+    precedente resta, e con lui l'anteprima e la fotocamera accesa."""
+    _in_anteprima(in_rete, pagina)
+    pagina.route("**/api/stato", lambda richiesta: richiesta.abort())
+    _rileggi_lo_stato(pagina)
+    pagina.locator("#avviso").wait_for(state="visible")
+    assert schermata(pagina, "anteprima").is_visible()
+    assert pagina.evaluate("document.getElementById('video').videoWidth") > 0

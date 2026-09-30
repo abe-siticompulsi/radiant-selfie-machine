@@ -105,12 +105,14 @@ function vai(evento) {
 
 function disegna() {
   let vista = schermata(server, locale, oraServer());
-  // Se durante il conto il servizio cambia stato (foto accettata, giro chiuso), la
-  // schermata non è più il conto: si ferma il timer e si torna all'anteprima, così
-  // allo zero non scatta niente e nessun avviso falso compare.
-  if (locale.fase === 'conto' && !vista.conto) {
+  // Se nell'anteprima o durante il conto il servizio cambia stato (foto accettata,
+  // giro chiuso), la schermata non è più l'anteprima: si ferma il timer e si torna a
+  // riposo. Così allo zero non scatta niente, nessun avviso falso compare, e con un
+  // giro nuovo la pagina riparte dall'invito invece di riaccendere la fotocamera da
+  // sola. Un aggiornamento fallito non passa da qui: `server` resta quello di prima.
+  if (fotocameraServe() && vista.nome !== 'anteprima') {
     fermaTimerConto();
-    locale = dopo(locale, 'ferma');
+    locale = dopo(locale, 'annulla');
     vista = schermata(server, locale, oraServer());
   }
   for (const sezione of document.querySelectorAll('[data-schermata]')) {

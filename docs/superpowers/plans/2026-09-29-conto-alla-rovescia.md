@@ -358,6 +358,8 @@ import {
   }
 ```
 
+> Nota (revisione finale): questo blocco è stato cambiato. Con un giro nuovo a pagina aperta, il ritorno all'anteprima accendeva la fotocamera senza invito; vale anche per l'anteprima senza conto. Ora la condizione è `fotocameraServe() && vista.nome !== 'anteprima'` e l'evento è `annulla` (si torna a riposo, e con un giro nuovo riparte l'invito).
+
    e subito dopo la riga `$('motivo').textContent = …;` aggiungi:
 
 ```js
