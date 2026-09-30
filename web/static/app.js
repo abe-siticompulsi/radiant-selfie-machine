@@ -9,6 +9,7 @@ import {
   esadecimale,
   esitoApertura,
   esitoDopoConflitto,
+  faseDelGiro,
   leggiPreferenzaConto,
   msAllaFineDelRinvio,
   salvaPreferenzaConto,
@@ -93,10 +94,11 @@ async function statoAttuale() {
 }
 
 // Un doppio tocco manda lo stesso evento due volte: il secondo non è ammesso
-// nella fase nuova, e va semplicemente ignorato.
+// nella fase nuova, e va semplicemente ignorato. Uscendo da riposo la fase annota
+// il giro che il servizio mostra in quel momento.
 function vai(evento) {
   try {
-    locale = dopo(locale, evento);
+    locale = dopo(locale, evento, server?.giro?.id ?? null);
   } catch {
     return;
   }
@@ -104,12 +106,20 @@ function vai(evento) {
 }
 
 function disegna() {
+  // La fase locale appartiene al giro in cui è cominciata: se il servizio mostra un
+  // giro diverso o nessuno, si riparte da riposo con la foto scartata (non andrebbe
+  // mai nel giro nuovo) e la schermata la decide il servizio. Un aggiornamento
+  // fallito non passa da qui: `server` resta quello di prima.
+  const delGiro = faseDelGiro(locale, server);
+  if (delGiro !== locale) {
+    fermaTimerConto();
+    fotoPronta = null;
+    locale = delGiro;
+  }
   let vista = schermata(server, locale, oraServer());
-  // Se nell'anteprima o durante il conto il servizio cambia stato (foto accettata,
-  // giro chiuso), la schermata non è più l'anteprima: si ferma il timer e si torna a
-  // riposo. Così allo zero non scatta niente, nessun avviso falso compare, e con un
-  // giro nuovo la pagina riparte dall'invito invece di riaccendere la fotocamera da
-  // sola. Un aggiornamento fallito non passa da qui: `server` resta quello di prima.
+  // Nello stesso giro il servizio può ancora cambiare stato sotto l'anteprima o il
+  // conto (foto accettata): la schermata non è più l'anteprima, si ferma il timer e
+  // si torna a riposo. Così allo zero non scatta niente e nessun avviso falso compare.
   if (fotocameraServe() && vista.nome !== 'anteprima') {
     fermaTimerConto();
     locale = dopo(locale, 'annulla');
@@ -280,12 +290,15 @@ function fermaConto() {
 // «Foto ricevuta» compare solo se il servizio restituisce l'impronta dei byte
 // che la pagina ha calcolato: un invio che non torna è un errore, mai un successo.
 async function inviaFoto(evento) {
+  // Il giro in cui la foto è stata scattata, letto una volta sola: i tentativi
+  // automatici non guardano `server`, che nel frattempo può mostrare un giro nuovo.
+  const giro = locale.giro;
   vai(evento);
   avvisa('');
   const dati = await fotoPronta.arrayBuffer();
   const attesa = esadecimale(await crypto.subtle.digest('SHA-256', dati));
   try {
-    const risposta = await conTentativi(() => api('PUT', `/api/giro/${server.giro.id}/foto`, dati, 'image/jpeg'));
+    const risposta = await conTentativi(() => api('PUT', `/api/giro/${giro}/foto`, dati, 'image/jpeg'));
     if (risposta.sha256 !== attesa) throw new Error('il servizio ha salvato una foto diversa da quella inviata');
     fotoPronta = null;
     vai('inviata');

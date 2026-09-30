@@ -404,6 +404,13 @@ def _rileggi_lo_stato(pagina):
     pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
 
 
+def _invito_con_la_fotocamera_spenta(pagina):
+    """La persona non ha chiesto la fotocamera in questo giro: invito, e niente video."""
+    schermata(pagina, "invito").wait_for(state="visible", timeout=3000)
+    assert not schermata(pagina, "anteprima").is_visible()
+    assert pagina.evaluate("document.getElementById('video').srcObject") is None  # fotocamera spenta
+
+
 def _riparte_dall_invito(in_rete, pagina):
     """Il giro si chiude con la pagina aperta e se ne apre uno nuovo: la persona
     non ha chiesto la fotocamera, quindi ricompare l'invito e la fotocamera è spenta."""
@@ -412,9 +419,18 @@ def _riparte_dall_invito(in_rete, pagina):
     schermata(pagina, "nessun_giro").wait_for(state="visible", timeout=3000)
     in_rete.servizio.apri_giro(in_rete.gio)
     _rileggi_lo_stato(pagina)
-    schermata(pagina, "invito").wait_for(state="visible", timeout=3000)
-    assert not schermata(pagina, "anteprima").is_visible()
-    assert pagina.evaluate("document.getElementById('video').srcObject") is None  # fotocamera spenta
+    _invito_con_la_fotocamera_spenta(pagina)
+
+
+def _chiudi_e_riapri_il_giro(in_rete):
+    """Come «Apri il giro» a più di 12 ore dal precedente: il vecchio si chiude e
+    ne nasce uno nuovo nello stesso blocco, senza che la pagina rilegga in mezzo
+    (il polling non vede mai «nessun giro»). Restituisce i numeri dei due giri."""
+    vecchio = in_rete.store.ultimo_giro().id
+    _chiudi_il_giro(in_rete)
+    nuovo = in_rete.servizio.apri_giro(in_rete.gio)["giro"]["id"]
+    assert nuovo != vecchio
+    return vecchio, nuovo
 
 
 def test_se_a_meta_conto_il_giro_si_chiude_con_un_giro_nuovo_si_riparte_dall_invito(in_rete, pagina):
@@ -439,3 +455,80 @@ def test_un_guasto_di_rete_nell_anteprima_non_butta_fuori_dall_anteprima(in_rete
     pagina.locator("#avviso").wait_for(state="visible")
     assert schermata(pagina, "anteprima").is_visible()
     assert pagina.evaluate("document.getElementById('video').videoWidth") > 0
+
+
+def test_se_nell_anteprima_il_giro_cambia_senza_che_la_pagina_lo_veda_si_riparte_dall_invito(in_rete, pagina):
+    """Il caso delle 12 ore: il giro vecchio si chiude e il nuovo si apre nello
+    stesso blocco. La fase locale appartiene al giro in cui è cominciata: la
+    pagina non resta nell'anteprima, e la fotocamera si spegne."""
+    _in_anteprima(in_rete, pagina)
+    _chiudi_e_riapri_il_giro(in_rete)
+    _rileggi_lo_stato(pagina)
+    _invito_con_la_fotocamera_spenta(pagina)
+
+
+def test_se_a_meta_conto_il_giro_cambia_senza_che_la_pagina_lo_veda_si_riparte_dall_invito(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    _chiudi_e_riapri_il_giro(in_rete)
+    _rileggi_lo_stato(pagina)
+    _invito_con_la_fotocamera_spenta(pagina)
+    time.sleep(4)  # oltre i tre secondi: il conto di un giro che non c'è più non deve scattare
+    assert schermata(pagina, "invito").is_visible()
+    assert not schermata(pagina, "revisione").is_visible()
+    assert pagina.locator("#numero-conto").is_hidden()
+
+
+def test_se_nella_revisione_il_giro_cambia_la_foto_vecchia_non_va_nel_giro_nuovo(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    vecchio, nuovo = _chiudi_e_riapri_il_giro(in_rete)
+    _rileggi_lo_stato(pagina)
+    _invito_con_la_fotocamera_spenta(pagina)
+    assert not schermata(pagina, "revisione").is_visible()
+    # La persona riparte da capo: la foto nuova, scattata nel giro nuovo, va nel giro nuovo.
+    pagina.click("#scatta")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    pagina.click("#invia")
+    schermata(pagina, "in_attesa").wait_for(state="visible")
+    assert in_rete.store.foto(nuovo, "emi").stato == "in_attesa"
+    assert in_rete.store.foto(vecchio, "emi") is None
+
+
+def test_un_invio_ritentato_dopo_un_5xx_va_ancora_al_giro_in_cui_la_foto_e_stata_scattata(in_rete, pagina):
+    """Il primo tentativo fallisce (5xx) e, mentre la pagina aspetta il secondo, il
+    servizio passa a un giro nuovo che la pagina vede. L'invio non si interrompe,
+    ma il giro lo decide la foto, non lo stato di adesso: il secondo tentativo va al
+    giro vecchio (che risponde 410), mai al nuovo."""
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    vecchio = in_rete.store.ultimo_giro().id
+    nuovo = []
+    richieste = []
+    pagina.on("request", lambda r: richieste.append(f"{r.method} {r.url.split('/api/')[1]}") if "/api/" in r.url else None)
+
+    def primo_tentativo_fallisce(richiesta):
+        if not nuovo:
+            nuovo.append(_chiudi_e_riapri_il_giro(in_rete)[1])
+            _rileggi_lo_stato(pagina)
+            richiesta.fulfill(status=500, body="errore")
+        else:
+            richiesta.continue_()
+
+    pagina.route("**/api/giro/*/foto", primo_tentativo_fallisce)
+    pagina.click("#invia")
+    _invito_con_la_fotocamera_spenta(pagina)  # 410 del giro vecchio: «respinta», e l'invito del giro nuovo
+    posizioni = [i for i, r in enumerate(richieste) if r.startswith("PUT")]
+    assert [richieste[i] for i in posizioni] == [f"PUT giro/{vecchio}/foto"] * 2
+    # La pagina ha visto il giro nuovo fra i due tentativi: senza il legame al giro andrebbe lì.
+    assert "GET stato" in richieste[posizioni[0] : posizioni[1]]
+    assert in_rete.store.foto(nuovo[0], "emi") is None
+    assert in_rete.store.foto(vecchio, "emi") is None
+    assert pagina.locator("#avviso").text_content() == "Foto non inviata: il giro è chiuso."

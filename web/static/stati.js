@@ -3,9 +3,13 @@
 //
 // `schermata` decide cosa mostrare a partire dallo stato del servizio e dalla
 // fase locale (quello che la persona sta facendo adesso); `dopo` fa avanzare la
-// fase locale e rifiuta un evento che in quella fase non ha senso.
+// fase locale e rifiuta un evento che in quella fase non ha senso; `faseDelGiro`
+// dice se la fase locale vale ancora, o se il giro è cambiato sotto i piedi.
+//
+// La fase locale è `{ fase, giro }`: `giro` è il numero del giro in cui la persona
+// ha lasciato `riposo`, o null a riposo.
 
-export const FASE_INIZIALE = Object.freeze({ fase: 'riposo' });
+export const FASE_INIZIALE = Object.freeze({ fase: 'riposo', giro: null });
 
 const TRANSIZIONI = {
   riposo: { scatta: 'anteprima' },
@@ -19,10 +23,23 @@ const TRANSIZIONI = {
 
 const FASI_CHE_VINCONO = new Set(['anteprima', 'revisione', 'invio', 'errore_invio', 'fotocamera_negata']);
 
-export function dopo(locale, evento) {
+// `giro` è il giro che il servizio mostra adesso: si annota solo uscendo da
+// `riposo`, poi la fase lo tiene fino al ritorno a riposo.
+export function dopo(locale, evento, giro = null) {
   const prossima = TRANSIZIONI[locale.fase]?.[evento];
   if (!prossima) throw new Error(`evento «${evento}» non ammesso nella fase «${locale.fase}»`);
-  return { fase: prossima };
+  if (prossima === 'riposo') return { ...FASE_INIZIALE };
+  return { fase: prossima, giro: locale.fase === 'riposo' ? giro : locale.giro };
+}
+
+// La fase locale appartiene al giro in cui è cominciata. Se il servizio mostra un
+// giro diverso, o nessuno (chiuso, o uno nuovo aperto dopo più di 12 ore), la fase
+// non vale più: si riparte da `riposo`, e la schermata la decide il servizio.
+// Un invio in volo non si interrompe; se poi fallisce, `errore_invio` è di un giro
+// che non c'è più e il primo controllo dopo lo fa ripartire.
+export function faseDelGiro(locale, server) {
+  if (locale.fase === 'riposo' || locale.fase === 'invio') return locale;
+  return (server?.giro?.id ?? null) === locale.giro ? locale : FASE_INIZIALE;
 }
 
 export function msAllaFineDelRinvio(server, oraMs) {

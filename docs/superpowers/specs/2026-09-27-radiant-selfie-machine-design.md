@@ -70,9 +70,15 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
    conto si ferma e si torna all'anteprima; se allo zero la fotocamera non ha
    ancora un'immagine, si torna all'anteprima con «La fotocamera non è ancora
    pronta: riprova».
-   Se mentre la persona è nell'anteprima o nel conto il giro si chiude o la foto
-   viene accettata, la pagina lascia l'anteprima e spegne la fotocamera; con un
-   giro nuovo riparte dall'invito.
+   Se mentre la persona è nell'anteprima o nel conto la foto viene accettata, la
+   pagina lascia l'anteprima e spegne la fotocamera.
+   La fase in cui è la persona (anteprima, conto, foto da rivedere, invio non
+   riuscito) appartiene al giro in cui è cominciata: se il giro si chiude o ne
+   arriva uno nuovo, la pagina riparte da capo con quello che dice il servizio
+   (con un giro nuovo, dall'invito), spegne la fotocamera e scarta la foto non
+   inviata. Un invio già cominciato non si interrompe. Una foto scattata non va
+   mai in un giro diverso: l'invio, tentativi automatici e «Riprova» compresi, è
+   legato al giro in cui la foto è stata scattata.
 4. **Salta.** Il servizio annota un rinvio di X minuti; allo scadere manda di
    nuovo il push, e la pagina aperta ripropone l'invito. Senza limite.
 5. **Validazione.** Ogni foto ricevuta arriva ad Alberto in privato dal bot. I

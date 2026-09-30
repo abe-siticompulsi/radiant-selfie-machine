@@ -10,6 +10,7 @@ import {
   esadecimale,
   esitoApertura,
   esitoDopoConflitto,
+  faseDelGiro,
   leggiPreferenzaConto,
   msAllaFineDelRinvio,
   salvaPreferenzaConto,
@@ -237,4 +238,61 @@ test('senza archivio, o con uno che rifiuta, il conto è spento e la scelta vale
   assert.equal(leggiPreferenzaConto(ostile), false);
   assert.equal(salvaPreferenzaConto(null, true), false);
   assert.equal(salvaPreferenzaConto(ostile, true), false);
+});
+
+// La fase locale appartiene al giro in cui è cominciata (spec §3.3): se il servizio
+// mostra un giro diverso, o nessuno, la pagina riparte dall'invito.
+const GIRO_NUOVO = { ...GIRO, id: 2 };
+const nel_giro = (fase, giro = GIRO.id) => ({ fase, giro });
+const FASI_DI_UN_GIRO = ['anteprima', 'conto', 'revisione', 'errore_invio', 'fotocamera_negata'];
+
+test('uscendo da riposo si annota il giro, e la fase lo tiene fino al ritorno a riposo', () => {
+  assert.deepEqual(FASE_INIZIALE, { fase: 'riposo', giro: null });
+  let locale = dopo(FASE_INIZIALE, 'scatta', 7);
+  assert.deepEqual(locale, { fase: 'anteprima', giro: 7 });
+  // Il giro del servizio può cambiare mentre la persona è nell'anteprima: l'annotazione no.
+  for (const [evento, fase] of [['conta', 'conto'], ['scattata', 'revisione'], ['invia', 'invio'], ['fallita', 'errore_invio']]) {
+    locale = dopo(locale, evento, 8);
+    assert.deepEqual(locale, { fase, giro: 7 }, `dopo «${evento}»`);
+  }
+  assert.deepEqual(dopo(locale, 'lascia_perdere', 8), { fase: 'riposo', giro: null });
+});
+
+test('una fase dello stesso giro resta com\'è', () => {
+  for (const fase of [...FASI_DI_UN_GIRO, 'invio']) {
+    const locale = nel_giro(fase);
+    assert.equal(faseDelGiro(locale, stato()), locale, fase);
+  }
+});
+
+test('se il giro cambia la pagina riparte da riposo, in ogni fase tranne l\'invio', () => {
+  for (const fase of FASI_DI_UN_GIRO) {
+    assert.equal(faseDelGiro(nel_giro(fase), stato({ giro: GIRO_NUOVO })), FASE_INIZIALE, fase);
+  }
+});
+
+test('se il giro non c\'è più la pagina riparte da riposo', () => {
+  for (const fase of FASI_DI_UN_GIRO) {
+    assert.equal(faseDelGiro(nel_giro(fase), stato({ giro: null })), FASE_INIZIALE, fase);
+    assert.equal(faseDelGiro(nel_giro(fase), null), FASE_INIZIALE, fase); // il servizio non ha mai risposto
+  }
+});
+
+test('un invio in volo non si interrompe, anche se il giro è cambiato', () => {
+  const locale = nel_giro('invio');
+  assert.equal(faseDelGiro(locale, stato({ giro: GIRO_NUOVO })), locale);
+  assert.equal(faseDelGiro(locale, stato({ giro: null })), locale);
+});
+
+test('finito l\'invio, un invio non riuscito di un giro che non c\'è più riparte da riposo', () => {
+  const dopo_l_invio = dopo(nel_giro('invio'), 'fallita');
+  assert.deepEqual(dopo_l_invio, nel_giro('errore_invio'));
+  assert.equal(faseDelGiro(dopo_l_invio, stato({ giro: GIRO_NUOVO })), FASE_INIZIALE);
+  assert.equal(faseDelGiro(dopo_l_invio, stato()), dopo_l_invio); // nello stesso giro resta «Riprova»
+});
+
+test('riposo resta riposo, con qualunque stato del servizio', () => {
+  for (const server of [stato(), stato({ giro: GIRO_NUOVO }), stato({ giro: null }), null]) {
+    assert.equal(faseDelGiro(FASE_INIZIALE, server), FASE_INIZIALE);
+  }
 });

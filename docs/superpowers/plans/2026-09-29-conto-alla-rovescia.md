@@ -360,6 +360,8 @@ import {
 
 > Nota (revisione finale): questo blocco è stato cambiato. Con un giro nuovo a pagina aperta, il ritorno all'anteprima accendeva la fotocamera senza invito; vale anche per l'anteprima senza conto. Ora la condizione è `fotocameraServe() && vista.nome !== 'anteprima'` e l'evento è `annulla` (si torna a riposo, e con un giro nuovo riparte l'invito).
 
+> Nota (ultimo giro): la regola «con un giro nuovo riparte dall'invito» valeva solo se la pagina vedeva il giro chiuso: con «Apri il giro» a più di 12 ore dal precedente il vecchio si chiude e il nuovo si apre nello stesso blocco, il polling vede subito il giro nuovo e la fase locale vinceva. Ora `locale` è `{ fase, giro }` (il giro si annota uscendo da `riposo`), `faseDelGiro(locale, server)` in `stati.js` dice se la fase vale ancora, e `disegna` la applica prima del blocco qui sopra: giro diverso o nessun giro, e si riparte da `riposo` con timer fermato e foto scartata (fa eccezione `invio`). Il blocco resta per la foto accettata nello stesso giro. `inviaFoto` legge il giro da `locale.giro` una volta sola, prima dei tentativi, invece che da `server.giro.id`.
+
    e subito dopo la riga `$('motivo').textContent = …;` aggiungi:
 
 ```js
