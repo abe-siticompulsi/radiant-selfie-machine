@@ -28,6 +28,7 @@ let accensione = null;
 let fotoPronta = null;
 let timerRinvio = null;
 let timerConto = null;
+let codifica = false; // allo zero del conto, mentre il JPEG si codifica: il conto è finito
 let registrazione = null;
 let endpointConfermato = null; // l'iscrizione che il servizio ha salvato in questa sessione della pagina
 
@@ -67,6 +68,8 @@ function avvisa(testo) {
 // L'avviso di rete è vero solo finché il servizio non risponde: il primo
 // aggiornamento riuscito lo toglie, e lascia stare gli altri avvisi.
 const AVVISO_RETE = 'Non riesco a raggiungere il servizio: riprovo tra poco.';
+// Descrive l'anteprima dove è comparso: su un'altra schermata non è più vero.
+const AVVISO_NON_PRONTA = 'La fotocamera non è ancora pronta: riprova.';
 
 async function aggiorna() {
   try {
@@ -114,10 +117,14 @@ function disegna() {
     sezione.hidden = sezione.dataset.schermata !== vista.nome;
   }
   $('motivo').textContent = vista.motivo ? `: ${vista.motivo}` : '.';
+  if (vista.nome !== 'anteprima' && $('avviso').textContent === AVVISO_NON_PRONTA) avvisa('');
   const inConto = Boolean(vista.conto);
-  $('numero-conto').hidden = !inConto;
+  // Allo zero la foto è già scattata: niente più numero né «Ferma» mentre si codifica.
+  // `disegna` riscrive `hidden` a ogni giro, quindi lo stato sta in `codifica`.
+  const contaAncora = inConto && !codifica;
+  $('numero-conto').hidden = !contaAncora;
   $('scatta-foto').hidden = inConto;
-  $('ferma-conto').hidden = !inConto;
+  $('ferma-conto').hidden = !contaAncora;
   $('interruttore-conto').disabled = inConto;
   if (vista.nome === 'anteprima') accendiFotocamera();
   else spegniFotocamera();
@@ -170,6 +177,7 @@ function spegniFotocamera() {
 }
 
 async function scattaFoto() {
+  const fase = locale.fase;
   const video = $('video');
   if (!video.videoWidth) return false; // la fotocamera non ha ancora un'immagine
   const tela = $('tela');
@@ -177,6 +185,9 @@ async function scattaFoto() {
   tela.height = video.videoHeight;
   tela.getContext('2d').drawImage(video, 0, 0);
   const blob = await new Promise((risolvi) => tela.toBlob(risolvi, 'image/jpeg', 0.9));
+  // Se durante la codifica la persona ha lasciato la fase (Annulla, pagina sullo
+  // sfondo), la foto non serve più: non si va in revisione a cose decise.
+  if (locale.fase !== fase) return false;
   if (!blob) {
     avvisa('Non sono riuscito a fare la foto: riprova.');
     return false;
@@ -217,9 +228,12 @@ function premiScatta() {
 
 function avviaConto() {
   let resto = SECONDI_CONTO;
-  $('numero-conto').textContent = String(resto);
   vai('conta');
   if (locale.fase !== 'conto') return;
+  // Il «3» si scrive dopo che `disegna` ha reso visibile la regione aria-live: una
+  // regione che appare già piena di solito non viene annunciata dai lettori di schermo.
+  $('numero-conto').textContent = String(resto);
+  // Il fuoco resta dov'è: spostarlo su «Ferma» lo farebbe premere dall'autoripetizione di Invio.
   fermaTimerConto();
   timerConto = setInterval(() => {
     if (locale.fase !== 'conto') {
@@ -241,11 +255,17 @@ function avviaConto() {
 async function scattaAlloZero() {
   if (!$('video').videoWidth) {
     vai('ferma');
-    avvisa('La fotocamera non è ancora pronta: riprova.');
+    avvisa(AVVISO_NON_PRONTA);
     return;
   }
-  const riuscita = await scattaFoto();
-  if (!riuscita && locale.fase === 'conto') vai('ferma');
+  codifica = true;
+  disegna(); // toglie il numero e «Ferma» prima dell'attesa: dopo lo zero non c'è più niente da fermare
+  try {
+    const riuscita = await scattaFoto();
+    if (!riuscita && locale.fase === 'conto') vai('ferma');
+  } finally {
+    codifica = false;
+  }
 }
 
 function fermaConto() {

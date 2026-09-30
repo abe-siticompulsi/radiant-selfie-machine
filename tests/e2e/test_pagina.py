@@ -140,14 +140,43 @@ def _in_anteprima(in_rete, pagina):
 
 def _registra_i_numeri_del_conto(pagina):
     """Annota ogni numero che la pagina scrive in #numero-conto: la sequenza si
-    legge alla fine, senza campionare a intervalli (che sarebbe instabile)."""
+    legge alla fine, senza campionare a intervalli (che sarebbe instabile).
+    `scrittiDelConto` annota anche se l'elemento era nascosto nell'istante preciso
+    della scrittura: una regione aria-live che appare già piena non viene
+    annunciata dai lettori di schermo, quindi deve essere visibile prima."""
     pagina.evaluate(
         """() => {
             window.numeriDelConto = [];
+            window.scrittiDelConto = [];
             const numero = document.getElementById('numero-conto');
             new MutationObserver(() => window.numeriDelConto.push(numero.textContent))
                 .observe(numero, { childList: true, characterData: true, subtree: true });
+            const originale = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+            Object.defineProperty(numero, 'textContent', {
+                configurable: true,
+                get() { return originale.get.call(this); },
+                set(testo) {
+                    window.scrittiDelConto.push([testo, this.hidden]);
+                    originale.set.call(this, testo);
+                },
+            });
         }"""
+    )
+
+
+def _rallenta_la_codifica(pagina, ms=1500):
+    """La codifica del JPEG dopo lo zero dura pochi millisecondi: la si allunga per
+    poter guardare la pagina mentre dura. `codificaIniziata` dice che è partita."""
+    pagina.evaluate(
+        """(ms) => {
+            const originale = HTMLCanvasElement.prototype.toBlob;
+            window.codificaIniziata = false;
+            HTMLCanvasElement.prototype.toBlob = function (...argomenti) {
+                window.codificaIniziata = true;
+                setTimeout(() => originale.apply(this, argomenti), ms);
+            };
+        }""",
+        ms,
     )
 
 
@@ -166,6 +195,41 @@ def test_il_conto_alla_rovescia_aspetta_tre_secondi_e_scatta(in_rete, pagina):
     schermata(pagina, "revisione").wait_for(state="visible", timeout=6000)
     assert time.monotonic() - inizio >= 2.5
     assert pagina.evaluate("window.numeriDelConto") == ["3", "2", "1"]
+    # Ogni numero, «3» compreso, si scrive quando l'elemento è già visibile.
+    assert pagina.evaluate("window.scrittiDelConto") == [["3", False], ["2", False], ["1", False]]
+
+
+def test_allo_zero_il_numero_e_ferma_spariscono_durante_la_codifica(in_rete, pagina):
+    """Allo zero la foto è già scattata: mentre il JPEG si codifica non c'è più un
+    «Ferma» da premere (porterebbe all'anteprima, e si finirebbe comunque in
+    revisione), né un numero «1» che non è più vero."""
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    _rallenta_la_codifica(pagina)
+    pagina.click("#scatta-foto")
+    assert aspetta(lambda: pagina.evaluate("window.codificaIniziata"), secondi=6)
+    assert pagina.locator("#numero-conto").is_hidden()
+    assert pagina.locator("#ferma-conto").is_hidden()
+    assert pagina.locator("#scatta-foto").is_hidden()
+    assert not schermata(pagina, "revisione").is_visible()  # la codifica non è ancora finita
+    schermata(pagina, "revisione").wait_for(state="visible", timeout=4000)
+
+
+def test_se_la_pagina_va_sullo_sfondo_durante_la_codifica_si_resta_all_anteprima(in_rete, pagina):
+    """Se la persona lascia la pagina dopo lo zero, il conto è fermato come sempre:
+    la foto che si stava codificando non deve portare in revisione dopo."""
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    _rallenta_la_codifica(pagina)
+    pagina.click("#scatta-foto")
+    assert aspetta(lambda: pagina.evaluate("window.codificaIniziata"), secondi=6)
+    pagina.evaluate(
+        "Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'hidden'});"
+        "document.dispatchEvent(new Event('visibilitychange'))"
+    )
+    time.sleep(2.5)  # oltre la codifica rallentata
+    assert schermata(pagina, "anteprima").is_visible()
+    assert not schermata(pagina, "revisione").is_visible()
 
 
 def test_ferma_riporta_all_anteprima_senza_scattare(in_rete, pagina):
@@ -314,6 +378,7 @@ def test_l_avviso_di_fotocamera_non_pronta_non_resta_dopo_uno_scatto_riuscito(in
     # Si riaccende la fotocamera (Annulla, poi Scatta) e si scatta davvero.
     pagina.click("#annulla")
     schermata(pagina, "invito").wait_for(state="visible")
+    assert avviso.is_hidden(), avviso.text_content()  # sull'invito l'avviso non descrive più la schermata
     pagina.click("#scatta")
     schermata(pagina, "anteprima").wait_for(state="visible")
     assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
