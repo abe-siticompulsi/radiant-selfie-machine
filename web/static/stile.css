@@ -38,6 +38,9 @@ button {
 }
 button.primario { background: var(--accento); border-color: var(--accento); color: var(--accento-testo); font-weight: 600; }
 button:disabled { opacity: 0.5; cursor: default; }
+/* «Ferma» prende il posto di «Scatta la foto» e «Annulla» non si sposta: un tocco
+   nel punto dove stava lo scatto cade su «Ferma», mai su «Annulla». */
+#scatta-foto, #ferma-conto { width: 10em; }
 
 /* Anteprima e revisione a specchio, come uno specchio. La foto salvata no:
    come fanno le fotocamere frontali dei telefoni. */

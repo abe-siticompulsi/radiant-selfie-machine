@@ -37,8 +37,12 @@ def test_scatto_e_invio_fino_alla_foto_ricevuta(in_rete, pagina):
     # wait_for_function con una stringa passa da eval, che la CSP della pagina
     # blocca (bene così): si interroga la pagina con evaluate, che non la attraversa.
     assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    # L'interruttore del conto è spento di partenza: lo scatto è immediato, senza numeri.
+    _registra_i_numeri_del_conto(pagina)
     pagina.click("#scatta-foto")
+    assert pagina.locator("#numero-conto").is_hidden()  # il gestore è sincrono: un conto sarebbe già partito
     schermata(pagina, "revisione").wait_for(state="visible")
+    assert pagina.evaluate("window.numeriDelConto") == []
     pagina.click("#invia")
     schermata(pagina, "in_attesa").wait_for(state="visible")
     giro = in_rete.store.ultimo_giro()
@@ -176,6 +180,29 @@ def test_ferma_riporta_all_anteprima_senza_scattare(in_rete, pagina):
     time.sleep(3.5)  # oltre i tre secondi: il timer fermato non deve scattare
     assert schermata(pagina, "anteprima").is_visible()
     assert not schermata(pagina, "revisione").is_visible()
+
+
+def _riquadro(pagina, selettore):
+    riquadro = pagina.locator(selettore).bounding_box()
+    assert riquadro is not None, f"{selettore} non è visibile"
+    return riquadro
+
+
+@pytest.mark.parametrize("viewport", [None, {"width": 375, "height": 812}], ids=["larghezza-di-default", "375px"])
+def test_ferma_occupa_il_posto_di_scatta_la_foto(in_rete, pagina, viewport):
+    """Un tocco dove stava «Scatta la foto» deve cadere su «Ferma», non su «Annulla»
+    (che esce dal conto e spegne la fotocamera): i riquadri devono coincidere."""
+    if viewport:
+        pagina.set_viewport_size(viewport)
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    scatta, annulla = _riquadro(pagina, "#scatta-foto"), _riquadro(pagina, "#annulla")
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible")
+    ferma, annulla_nel_conto = _riquadro(pagina, "#ferma-conto"), _riquadro(pagina, "#annulla")
+    for lato in ("x", "y", "width", "height"):
+        assert ferma[lato] == pytest.approx(scatta[lato], abs=1), f"«Ferma» non sta dov'era «Scatta la foto»: {lato}"
+        assert annulla_nel_conto[lato] == pytest.approx(annulla[lato], abs=1), f"«Annulla» si è spostato: {lato}"
 
 
 def test_l_interruttore_si_ricorda_sul_dispositivo(in_rete, pagina):

@@ -268,6 +268,8 @@ Per questa prova, in cima al file aggiungi `from rsm import gettoni` e `from tes
 
 Senza l'interruttore lo scatto resta immediato: lo prova già `test_scatto_e_invio_fino_alla_foto_ricevuta`, perché ogni prova parte da un browser nuovo, con l'interruttore spento.
 
+> Nota (revisione finale): la frase precedente non era vera. La prova passava anche se `premiScatta` avviava sempre il conto, perché non guardava i numeri. Ora `test_scatto_e_invio_fino_alla_foto_ricevuta` registra i numeri del conto e verifica che, con l'interruttore spento, `#numero-conto` resti nascosto e non riceva nessun numero.
+
 - [ ] **Step 2: lancia le prove e verifica che falliscano**
 
 Run: `uv run pytest -m e2e -q`
