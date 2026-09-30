@@ -404,9 +404,9 @@ def _rileggi_lo_stato(pagina):
     pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
 
 
-def _invito_con_la_fotocamera_spenta(pagina):
+def _invito_con_la_fotocamera_spenta(pagina, timeout=3000):
     """La persona non ha chiesto la fotocamera in questo giro: invito, e niente video."""
-    schermata(pagina, "invito").wait_for(state="visible", timeout=3000)
+    schermata(pagina, "invito").wait_for(state="visible", timeout=timeout)
     assert not schermata(pagina, "anteprima").is_visible()
     assert pagina.evaluate("document.getElementById('video').srcObject") is None  # fotocamera spenta
 
@@ -522,16 +522,28 @@ def test_un_invio_ritentato_dopo_un_5xx_va_ancora_al_giro_in_cui_la_foto_e_stata
         else:
             richiesta.continue_()
 
+    letture = []
+
+    def dopo_il_410(risposta):
+        # La prima lettura dello stato è quella fra i due tentativi, la seconda segue il 410:
+        # solo dopo di essa la pagina decide se scrivere l'avviso (l'invito compare già a «respinta»).
+        if risposta.url.endswith("/api/stato"):
+            letture.append(risposta)
+        return len(letture) == 2
+
     pagina.route("**/api/giro/*/foto", primo_tentativo_fallisce)
-    pagina.click("#invia")
+    with pagina.expect_response(dopo_il_410, timeout=8000):
+        pagina.click("#invia")
     _invito_con_la_fotocamera_spenta(pagina)  # 410 del giro vecchio: «respinta», e l'invito del giro nuovo
+    pagina.wait_for_timeout(300)  # la decisione sull'avviso viene subito dopo quella risposta
     posizioni = [i for i, r in enumerate(richieste) if r.startswith("PUT")]
     assert [richieste[i] for i in posizioni] == [f"PUT giro/{vecchio}/foto"] * 2
     # La pagina ha visto il giro nuovo fra i due tentativi: senza il legame al giro andrebbe lì.
     assert "GET stato" in richieste[posizioni[0] : posizioni[1]]
     assert in_rete.store.foto(nuovo[0], "emi") is None
     assert in_rete.store.foto(vecchio, "emi") is None
-    assert pagina.locator("#avviso").text_content() == "Foto non inviata: il giro è chiuso."
+    # «Foto non inviata: il giro è chiuso» parla del giro vecchio: sull'invito del giro nuovo non descrive la schermata.
+    assert pagina.locator("#avviso").is_hidden(), pagina.locator("#avviso").text_content()
 
 
 _GUASTI_DELLA_CODIFICA = {
@@ -607,3 +619,160 @@ def test_se_la_codifica_non_risponde_mai_il_conto_seguente_mostra_numero_e_ferma
     pagina.locator("#numero-conto").wait_for(state="visible", timeout=2000)
     assert pagina.locator("#ferma-conto").is_visible()
     schermata(pagina, "revisione").wait_for(state="visible", timeout=6000)
+
+
+@pytest.mark.parametrize("durante_l_invio", [False, True], ids=["dopo-l-errore", "durante-l-invio"])
+def test_un_invio_non_riuscito_di_un_giro_che_non_c_e_piu_non_lascia_avvisi_sull_invito(
+    in_rete, pagina, durante_l_invio
+):
+    """Tre 5xx di fila: «Invio non riuscito» descrive la schermata dell'errore, non
+    l'invito di un giro nuovo. Il giro cambia dopo l'errore (la pagina lo vede al
+    primo aggiornamento) oppure durante l'invio (che non si interrompe)."""
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    nuovo = []
+
+    def sempre_5xx(richiesta):
+        if durante_l_invio and not nuovo:
+            nuovo.append(_chiudi_e_riapri_il_giro(in_rete)[1])
+            _rileggi_lo_stato(pagina)
+        richiesta.fulfill(status=500, body="errore")
+
+    pagina.route("**/api/giro/*/foto", sempre_5xx)
+    pagina.click("#invia")
+    avviso = pagina.locator("#avviso")
+    if durante_l_invio:
+        _invito_con_la_fotocamera_spenta(pagina, timeout=8000)  # dopo i tre tentativi
+    else:
+        schermata(pagina, "errore_invio").wait_for(state="visible", timeout=8000)
+        assert avviso.text_content() == "Invio non riuscito: HTTP 500."
+        nuovo.append(_chiudi_e_riapri_il_giro(in_rete)[1])
+        _rileggi_lo_stato(pagina)
+        _invito_con_la_fotocamera_spenta(pagina)
+    assert avviso.is_hidden(), avviso.text_content()
+    assert in_rete.store.foto(nuovo[0], "emi") is None
+
+
+def test_l_avviso_della_codifica_fallita_non_resta_sull_invito(in_rete, pagina):
+    _in_anteprima(in_rete, pagina)
+    _guasta_la_codifica(pagina, "toblob-nullo")
+    pagina.click("#scatta-foto")
+    avviso = pagina.locator("#avviso")
+    avviso.wait_for(state="visible")
+    assert avviso.text_content() == "Non sono riuscito a fare la foto: riprova."
+    pagina.click("#annulla")
+    schermata(pagina, "invito").wait_for(state="visible")
+    assert avviso.is_hidden(), avviso.text_content()  # sull'invito «riprova» non descrive la schermata
+
+
+def test_se_il_giro_e_chiuso_e_non_ce_n_e_un_altro_l_invio_respinto_lo_dice(in_rete, pagina):
+    """Il controllo dell'avviso non deve tacere troppo: senza un giro nuovo, «Foto non
+    inviata: il giro è chiuso» spiega la schermata «nessun giro» che compare."""
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    _chiudi_il_giro(in_rete)  # la pagina non lo sa ancora
+    pagina.click("#invia")
+    avviso = pagina.locator("#avviso")
+    avviso.wait_for(state="visible", timeout=3000)
+    assert avviso.text_content() == "Foto non inviata: il giro è chiuso."
+    assert schermata(pagina, "nessun_giro").is_visible()
+
+
+def _trattieni_la_codifica(pagina):
+    """La prima codifica dopo questa chiamata non risponde: `window.rispondiTardi(nulla)`
+    la fa rispondere quando la prova vuole, con la foto com'era allora o con null. Le
+    codifiche seguenti rispondono subito, come sempre."""
+    pagina.evaluate(
+        """() => {
+            window.toBlobVero = HTMLCanvasElement.prototype.toBlob;
+            window.codificaIniziata = false;
+            HTMLCanvasElement.prototype.toBlob = function (...argomenti) {
+                window.codificaIniziata = true;
+                const copia = document.createElement('canvas');
+                copia.width = this.width;
+                copia.height = this.height;
+                copia.getContext('2d').drawImage(this, 0, 0);
+                window.rispondiTardi = (nulla) =>
+                    nulla ? argomenti[0](null) : window.toBlobVero.apply(copia, argomenti);
+                HTMLCanvasElement.prototype.toBlob = window.toBlobVero;
+            };
+        }"""
+    )
+
+
+@pytest.mark.parametrize(
+    ("cambia_il_giro", "risposta_tardiva"),
+    [(False, "foto"), (True, "foto"), (False, "nulla")],
+    ids=["stesso-giro", "giro-nuovo", "risposta-nulla"],
+)
+def test_una_codifica_in_ritardo_non_tocca_il_conto_nuovo(in_rete, pagina, cambia_il_giro, risposta_tardiva):
+    """Allo zero `toBlob` tarda. La persona esce dal conto (Annulla, o il giro cambia) e
+    ne comincia uno nuovo; poi la codifica vecchia risponde. Conta la fase com'era, non
+    il suo nome: «conto» torna a essere «conto», ma è un'altra fase. La foto vecchia non
+    va in revisione (e da lì nel giro nuovo), e il conto nuovo non si ferma."""
+    _in_anteprima(in_rete, pagina)
+    pagina.check("#interruttore-conto")
+    _trattieni_la_codifica(pagina)
+    pagina.click("#scatta-foto")
+    assert aspetta(lambda: pagina.evaluate("window.codificaIniziata"), secondi=6)
+    vecchio = in_rete.store.ultimo_giro().id
+    giro = vecchio
+    if cambia_il_giro:
+        _, giro = _chiudi_e_riapri_il_giro(in_rete)
+        _rileggi_lo_stato(pagina)
+    else:
+        pagina.click("#annulla")
+    _invito_con_la_fotocamera_spenta(pagina)
+    pagina.click("#scatta")
+    schermata(pagina, "anteprima").wait_for(state="visible")
+    assert aspetta(lambda: pagina.evaluate("document.getElementById('video').videoWidth") > 0)
+    pagina.click("#scatta-foto")  # un conto nuovo
+    pagina.locator("#numero-conto").wait_for(state="visible", timeout=2000)
+    pagina.evaluate("(nulla) => window.rispondiTardi(nulla)", risposta_tardiva == "nulla")
+    time.sleep(0.5)
+    assert not schermata(pagina, "revisione").is_visible(), "la foto del conto vecchio è finita in revisione"
+    assert pagina.locator("#numero-conto").is_visible(), "la codifica vecchia ha fermato il conto nuovo"
+    assert pagina.locator("#ferma-conto").is_visible()
+    assert pagina.locator("#avviso").is_hidden(), pagina.locator("#avviso").text_content()
+    assert in_rete.store.foto(giro, "emi") is None
+    schermata(pagina, "revisione").wait_for(state="visible", timeout=6000)  # il conto nuovo arriva allo zero
+    pagina.click("#invia")
+    schermata(pagina, "in_attesa").wait_for(state="visible")
+    assert in_rete.store.foto(giro, "emi").stato == "in_attesa"
+    if cambia_il_giro:
+        assert in_rete.store.foto(vecchio, "emi") is None
+
+
+# --- importante 2: un avviso non sopravvive al cambio di giro, nemmeno a riposo
+
+
+@pytest.mark.parametrize("rete_guasta", [False, True], ids=["rete-ok", "rete-guasta-dopo-il-410"])
+def test_l_avviso_di_un_invio_respinto_non_resta_sull_invito_del_giro_dopo(in_rete, pagina, rete_guasta):
+    """Giro chiuso senza uno nuovo, «Invia», 410: «Foto non inviata: il giro è chiuso»
+    spiega la schermata «nessun giro». Quando poi si apre un giro nuovo la fase è già a
+    riposo (nessuna ripartenza): l'avviso deve sparire lo stesso. Con la rete guasta
+    dopo il 410 il messaggio prende il posto dell'avviso di rete, e non c'è altro che lo tolga."""
+    _in_anteprima(in_rete, pagina)
+    pagina.click("#scatta-foto")
+    schermata(pagina, "revisione").wait_for(state="visible")
+    _chiudi_il_giro(in_rete)  # la pagina non lo sa ancora
+    if rete_guasta:
+        pagina.route("**/api/stato", lambda richiesta: richiesta.abort())
+    pagina.click("#invia")
+    avviso = pagina.locator("#avviso")
+    avviso.wait_for(state="visible", timeout=3000)
+    if rete_guasta:
+        pagina.wait_for_timeout(300)  # il messaggio viene dopo l'aggiornamento fallito
+        pagina.unroute("**/api/stato")
+        _rileggi_lo_stato(pagina)
+        schermata(pagina, "nessun_giro").wait_for(state="visible", timeout=3000)
+        assert avviso.is_hidden(), avviso.text_content()  # il giro della pagina è cambiato: da «vecchio» a «nessuno»
+    else:
+        assert avviso.text_content() == "Foto non inviata: il giro è chiuso."
+        assert schermata(pagina, "nessun_giro").is_visible()
+    in_rete.servizio.apri_giro(in_rete.gio)  # il giro dopo
+    _rileggi_lo_stato(pagina)
+    schermata(pagina, "invito").wait_for(state="visible", timeout=3000)
+    assert avviso.is_hidden(), f"sull'invito del giro nuovo: {avviso.text_content()!r}"

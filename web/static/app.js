@@ -23,6 +23,7 @@ const $ = (id) => document.getElementById(id);
 
 let server = null;
 let locale = { ...FASE_INIZIALE };
+let giroVisto; // il giro dell'ultimo stato disegnato; indefinito prima del primo
 let scarto = 0; // ora del server meno ora del dispositivo, in millisecondi
 let flusso = null;
 let accensione = null;
@@ -69,10 +70,11 @@ function avvisa(testo) {
 // L'avviso di rete è vero solo finché il servizio non risponde: il primo
 // aggiornamento riuscito lo toglie, e lascia stare gli altri avvisi.
 const AVVISO_RETE = 'Non riesco a raggiungere il servizio: riprovo tra poco.';
-// Descrive l'anteprima dove è comparso: su un'altra schermata non è più vero.
+// Descrive l'anteprima dove è comparso (come AVVISO_FOTO_FALLITA): su un'altra schermata non è più vero.
 const AVVISO_NON_PRONTA = 'La fotocamera non è ancora pronta: riprova.';
 // La codifica della foto non è riuscita (il browser non ha dato un blob, o ha lanciato).
 const AVVISO_FOTO_FALLITA = 'Non sono riuscito a fare la foto: riprova.';
+const AVVISI_DELL_ANTEPRIMA = [AVVISO_NON_PRONTA, AVVISO_FOTO_FALLITA];
 
 async function aggiorna() {
   try {
@@ -118,6 +120,13 @@ function disegna() {
     fotoPronta = null;
     locale = delGiro;
   }
+  // Un avviso sul giro vecchio non descrive lo stato di un giro diverso, nemmeno a
+  // riposo (nessuna ripartenza, ma il giro è cambiato): quello di rete sì.
+  const giroOra = server?.giro?.id ?? null;
+  if (server && giroOra !== giroVisto) {
+    if (giroVisto !== undefined && $('avviso').textContent !== AVVISO_RETE) avvisa('');
+    giroVisto = giroOra;
+  }
   let vista = schermata(server, locale, oraServer());
   // Nello stesso giro il servizio può ancora cambiare stato sotto l'anteprima o il
   // conto (foto accettata): la schermata non è più l'anteprima, si ferma il timer e
@@ -131,7 +140,7 @@ function disegna() {
     sezione.hidden = sezione.dataset.schermata !== vista.nome;
   }
   $('motivo').textContent = vista.motivo ? `: ${vista.motivo}` : '.';
-  if (vista.nome !== 'anteprima' && $('avviso').textContent === AVVISO_NON_PRONTA) avvisa('');
+  if (vista.nome !== 'anteprima' && AVVISI_DELL_ANTEPRIMA.includes($('avviso').textContent)) avvisa('');
   const inConto = Boolean(vista.conto);
   // Allo zero la foto è già scattata: niente più numero né «Ferma» mentre si codifica.
   // `disegna` riscrive `hidden` a ogni giro, quindi lo stato sta in `codifica`.
@@ -191,7 +200,9 @@ function spegniFotocamera() {
 }
 
 async function scattaFoto() {
-  const fase = locale.fase;
+  // La fase di adesso, non il suo nome: durante la codifica la persona può uscire dal
+  // conto e cominciarne uno nuovo (anche in un altro giro), e «conto» tornerebbe «conto».
+  const inizio = locale;
   const video = $('video');
   if (!video.videoWidth) return false; // la fotocamera non ha ancora un'immagine
   try {
@@ -201,8 +212,8 @@ async function scattaFoto() {
     tela.getContext('2d').drawImage(video, 0, 0);
     const blob = await new Promise((risolvi) => tela.toBlob(risolvi, 'image/jpeg', 0.9));
     // Se durante la codifica la persona ha lasciato la fase (Annulla, pagina sullo
-    // sfondo), la foto non serve più: non si va in revisione a cose decise.
-    if (locale.fase !== fase) return false;
+    // sfondo, giro cambiato), la foto non serve più: non si va in revisione a cose decise.
+    if (locale !== inizio) return false;
     if (!blob) {
       avvisa(AVVISO_FOTO_FALLITA);
       return false;
@@ -282,12 +293,14 @@ async function scattaAlloZero() {
   }
   codifica = true;
   disegna(); // toglie il numero e «Ferma» prima dell'attesa: dopo lo zero non c'è più niente da fermare
-  try {
-    const riuscita = await scattaFoto();
-    if (!riuscita && locale.fase === 'conto') vai('ferma');
-  } finally {
-    codifica = false;
-  }
+  const inizio = locale;
+  const riuscita = await scattaFoto();
+  // Se la fase è cambiata (foto in revisione, Annulla, un conto nuovo già partito) non è più
+  // affare di questo scatto: `codifica` e «Ferma» sono di chi c'è adesso. Dopo una foto
+  // riuscita `codifica` resta vera, e `avviaConto` la azzera prima di ogni conto.
+  if (locale !== inizio) return;
+  codifica = false;
+  if (!riuscita) vai('ferma');
 }
 
 function fermaConto() {
@@ -319,12 +332,16 @@ async function inviaFoto(evento) {
       const esito = errore.stato === 409 ? esitoDopoConflitto(await statoAttuale(), attesa) : 'respinta';
       fotoPronta = null;
       vai(esito);
-      if (esito === 'respinta') avvisa(`Foto non inviata: ${errore.message}.`);
       await aggiorna();
+      // Il motivo riguarda la foto di quel giro: se ora il servizio ne mostra un altro,
+      // sul suo invito non descriverebbe la schermata.
+      const altroGiro = server?.giro && server.giro.id !== giro;
+      if (esito === 'respinta' && !altroGiro) avvisa(`Foto non inviata: ${errore.message}.`);
       return;
     }
     vai('fallita');
-    avvisa(`Invio non riuscito: ${errore.message}.`);
+    // Se il giro non c'è più la fase è già ripartita da riposo: nessun «Riprova», nessun avviso.
+    if (locale.fase === 'errore_invio') avvisa(`Invio non riuscito: ${errore.message}.`);
   }
 }
 

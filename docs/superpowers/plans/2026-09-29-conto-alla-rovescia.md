@@ -385,6 +385,8 @@ e dentro `accendiFotocamera` sostituisci `if (locale.fase !== 'anteprima') {` co
 
 > Nota (ultimo giro): `scattaFoto` ha anche un `try/catch` attorno alla codifica (`drawImage`, `toBlob`): un errore del browser mostra lo stesso avviso del blob nullo e restituisce `false`, così `scattaAlloZero` fa tornare all'anteprima. `avviaConto` azzera `codifica` prima di cominciare, perché una codifica rimasta in sospeso non blocchi il conto seguente.
 
+> Nota (dopo la revisione): la guardia di `scattaFoto` dopo l'`await` confronta l'oggetto `locale` preso all'inizio (l'identità), non il nome della fase: un conto annullato e uno nuovo hanno lo stesso nome. Lo stesso in `scattaAlloZero`, che non ha più il `finally`: se la fase è cambiata lascia stare `codifica` e «Ferma», che sono del conto nuovo. In `disegna`, `giroVisto` tiene il giro dell'ultimo stato disegnato: quando cambia, l'avviso (tranne quello di rete) si toglie, anche a riposo.
+
 6. Subito dopo `scattaFoto` aggiungi:
 
 ```js
