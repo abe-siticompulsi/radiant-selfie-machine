@@ -182,13 +182,13 @@ def _rallenta_la_codifica(pagina, ms=1500):
 
 def test_il_conto_alla_rovescia_aspetta_tre_secondi_e_scatta(in_rete, pagina):
     _in_anteprima(in_rete, pagina)
+    assert pagina.locator("#etichetta-conto").inner_text() == "Conto alla rovescia (3 secondi)"  # come in spec §3.3
     pagina.check("#interruttore-conto")
     _registra_i_numeri_del_conto(pagina)
     inizio = time.monotonic()
     pagina.click("#scatta-foto")
     numero = pagina.locator("#numero-conto")
     numero.wait_for(state="visible")
-    assert numero.inner_text() == "3"
     assert pagina.locator("#ferma-conto").is_visible()
     assert not pagina.locator("#scatta-foto").is_visible()
     assert pagina.locator("#interruttore-conto").is_disabled()
@@ -360,6 +360,9 @@ def test_un_doppio_tocco_su_ferma_non_fa_ripartire_il_conto(in_rete, pagina):
     assert schermata(pagina, "anteprima").is_visible()
     assert pagina.locator("#numero-conto").is_hidden()
     assert not schermata(pagina, "revisione").is_visible()
+    # La pausa scade: passato mezzo secondo, un tocco su «Scatta la foto» conta.
+    pagina.click("#scatta-foto")
+    pagina.locator("#numero-conto").wait_for(state="visible", timeout=2000)
 
 
 def test_l_avviso_di_fotocamera_non_pronta_non_resta_dopo_uno_scatto_riuscito(in_rete, pagina):

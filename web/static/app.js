@@ -217,6 +217,7 @@ function fermaTimerConto() {
 // Dopo «Ferma» il pulsante dello scatto torna al suo posto: il secondo tocco di un
 // doppio tocco lo colpirebbe e farebbe ripartire il conto.
 const PAUSA_DOPO_FERMA_MS = 500;
+// Non 0: `performance.now()` parte dal caricamento, e con 0 i primi 500 ms ignorerebbero lo scatto.
 let fermatoAlle = -Infinity;
 
 function premiScatta() {

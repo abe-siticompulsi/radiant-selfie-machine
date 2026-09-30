@@ -20,3 +20,22 @@ smentisce una.
 | Il servizio gira su 127.0.0.1, che per il browser è un contesto sicuro. | Fotocamera, service worker e `crypto.subtle` esigono HTTPS con un certificato valido. | `tests/reale/test_servizio_pubblicato.py`. |
 | L'orologio è finto e coincide per tutti. | L'orologio del telefono può essere sbagliato. | La pagina misura il rinvio sull'ora del server (`ora` in `/api/stato`), non sulla propria. |
 | Nel Chrome dei test la pagina è sempre visibile: la prova simula il passaggio sullo sfondo con `visibilityState`. | Sul telefono la pagina va sullo sfondo a metà conto alla rovescia (una chiamata, un cambio di app): il conto deve fermarsi senza scattare. | Lo stop è provato in Chrome simulando `visibilityState` (`test_pagina_sullo_sfondo_a_meta_conto_ferma_il_conto`); che un telefono vero mandi davvero quell'evento lo si controlla a mano, alla prova generale. |
+| Il test node della preferenza del conto usa un archivio finto che ricorda, e uno ostile che lancia; nel Chrome dei test `localStorage` tiene la scelta per tutta la prova. | Safari accetta la scrittura e poi dimentica: ITP cancella i dati di un sito dopo 7 giorni senza visite, e una finestra privata li perde alla chiusura. L'app aggiunta alla schermata Home ha un archivio separato da quello di Safari. Chi gioca ogni settimana resta sotto i 7 giorni, ma una pausa di due settimane spegne l'interruttore. | A mano, su un iPhone. La preferenza è una comodità, non un dato: se sparisce, la pagina riparte da «spento». |
+
+## Da controllare a mano sul telefono
+
+Quello che Chrome con la webcam finta non può dire. Si passa in rassegna alla prova generale, su un iPhone e su un Android.
+
+**Conto alla rovescia**
+
+- iPhone: Centro di controllo, Centro notifiche, banner di chiamata e Siri a metà conto non mandano `visibilitychange`. Il conto va avanti e finisce in revisione; niente parte senza «Invia».
+- Blocco dello schermo o cambio di app a metà conto (iPhone e Android): il conto si ferma. Al ritorno non scatta niente in ritardo, e l'anteprima è viva, non congelata.
+- Android: la schermata delle app recenti e lo schermo diviso si comportano come il cambio di app.
+- iPhone: il numero è centrato e ben visibile sopra il video.
+- In orizzontale «Ferma» e «Annulla» restano raggiungibili.
+- iPhone: un doppio tocco vero su «Ferma» non ingrandisce la pagina (`touch-action: manipulation`) e la pausa di mezzo secondo basta a non far ripartire il conto.
+- Un tocco su «Ferma» nel punto dove stava «Scatta la foto» finisce su «Ferma», non su «Annulla».
+- Telefono lento: il ritardo fra «1» e la revisione è accettabile.
+- Risparmio energetico: la cadenza 3, 2, 1 resta regolare.
+- Mac: si avvia il conto prima di concedere la fotocamera, poi la si nega. Accanto a «Non riesco ad accendere la fotocamera» non compare l'avviso «La fotocamera non è ancora pronta».
+- Con Discord aperto il conto non fa nessun suono.

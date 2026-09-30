@@ -63,7 +63,9 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
    salvarlo, vale per la sessione). Acceso, «Scatta la foto» mostra sopra
    l'anteprima 3, 2, 1 e poi scatta; durante il conto il pulsante diventa
    «Ferma» (torna all'anteprima, fotocamera accesa), «Annulla» esce come sempre,
-   e l'interruttore non si tocca. **Muto**: il microfono dei giocatori è aperto
+   e l'interruttore non si tocca. «Ferma» sta nel punto di «Scatta la foto»: un
+   tocco su «Scatta la foto» entro mezzo secondo da «Ferma» non conta, è il
+   secondo tocco di un doppio tocco. **Muto**: il microfono dei giocatori è aperto
    su Discord e Craig registra. Se la pagina va sullo sfondo a metà conto, il
    conto si ferma e si torna all'anteprima; se allo zero la fotocamera non ha
    ancora un'immagine, si torna all'anteprima con «La fotocamera non è ancora
@@ -375,6 +377,7 @@ Un modulo nuovo, `giro.py`: il client HTTP del servizio (timeout 5 secondi),
 | Soglia sotto cui «Apri il giro» non riapre | 12 ore | servizio |
 | Polling della pagina | 20 secondi | pagina |
 | Conto alla rovescia prima dello scatto (facoltativo) | 3 secondi, spento di partenza | pagina |
+| Pausa dopo «Ferma», in cui «Scatta la foto» non risponde | 500 ms | pagina |
 | Tentativi automatici di invio | 3 | pagina |
 | Dimensione massima di una foto | 8 MB | servizio |
 | Cancellazione delle foto | 30 giorni dopo la chiusura del giro | servizio |
