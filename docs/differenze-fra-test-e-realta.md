@@ -28,7 +28,7 @@ Quello che Chrome con la webcam finta non può dire. Si passa in rassegna alla p
 
 **Conto alla rovescia**
 
-- iPhone: Centro di controllo, Centro notifiche, banner di chiamata e Siri a metà conto non mandano `visibilitychange`. Il conto va avanti e finisce in revisione; niente parte senza «Invia».
+- iPhone: Centro di controllo, Centro notifiche, banner di chiamata e Siri a metà conto: da verificare se mandano `visibilitychange`. Se lo mandano, il conto si ferma e si torna all'anteprima; se no, il conto va avanti e finisce in revisione (niente parte senza «Invia»). Si annota quale dei due casi avviene per ognuno.
 - Blocco dello schermo o cambio di app a metà conto (iPhone e Android): il conto si ferma. Al ritorno non scatta niente in ritardo, e l'anteprima è viva, non congelata.
 - Android: la schermata delle app recenti e lo schermo diviso si comportano come il cambio di app.
 - iPhone: il numero è centrato e ben visibile sopra il video.
@@ -39,3 +39,10 @@ Quello che Chrome con la webcam finta non può dire. Si passa in rassegna alla p
 - Risparmio energetico: la cadenza 3, 2, 1 resta regolare.
 - Mac: si avvia il conto prima di concedere la fotocamera, poi la si nega. Accanto a «Non riesco ad accendere la fotocamera» non compare l'avviso «La fotocamera non è ancora pronta».
 - Con Discord aperto il conto non fa nessun suono.
+- VoiceOver (iPhone) e TalkBack (Android) annunciano «3», «2», «1», uno alla volta.
+- Doppio tocco su «Scatta la foto» con il conto acceso: il conto parte e il secondo tocco cade su «Ferma» e lo ferma, senza scattare niente. È una scelta (il riquadro di «Ferma» coincide con quello di «Scatta la foto»); si controlla che sia così anche col dito.
+- «Scatta la foto» sta su una sola riga con i caratteri del telefono (il pulsante è largo `10em`: con un font più largo di quello di Chrome potrebbe andare a capo).
+
+**Cambio di giro**
+
+- Una scheda lasciata aperta sul computer fino al giro dopo, nell'anteprima, nel conto o davanti a una foto da rivedere: quando Alberto apre un giro nuovo (a più di 12 ore dal vecchio), al primo aggiornamento (polling ogni 20 secondi, o ritorno sulla scheda) compare l'invito e la spia della webcam si spegne. Una foto scattata dopo arriva nel giro nuovo. Lo stesso su un telefono lasciato bloccato fino al giro dopo.
