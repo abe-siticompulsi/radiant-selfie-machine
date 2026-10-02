@@ -209,6 +209,50 @@ def test_una_lettura_vecchia_che_arriva_tardi_non_riporta_indietro_la_pagina(in_
     assert pagina.locator("#avviso").is_hidden(), pagina.locator("#avviso").text_content()
 
 
+def test_una_lettura_vecchia_si_applica_se_quella_nuova_fallisce(in_rete, pagina):
+    """Il rovescio della prova qui sopra: non si scarta un progresso. La lettura
+    vecchia ha già letto lo stato nuovo, e arriva tardi; quella nuova fallisce. La
+    pagina applica la vecchia, che è comunque più recente di ciò che mostra, e
+    toglie l'avviso di rete: il servizio ha risposto."""
+    in_rete.servizio.apri_giro(in_rete.gio)
+    emi = in_rete.store.persona_da_impronta(gettoni.impronta(in_rete.emi))
+    ricevuta = in_rete.servizio.ricevi_foto(emi, in_rete.store.ultimo_giro().id, jpeg())
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    schermata(pagina, "in_attesa").wait_for(state="visible")
+    in_rete.servizio.decidi(ricevuta.foto.giro_id, "emi", ricevuta.foto.versione, "da_rifare", "troppo buia")
+    # La prima lettura legge subito il servizio e consegna al rilascio; la seconda fallisce.
+    pagina.evaluate(
+        """() => {
+            const originale = window.fetch;
+            let letture = 0;
+            window.fetch = async (indirizzo, opzioni) => {
+                if (!String(indirizzo).includes('/api/stato')) return originale(indirizzo, opzioni);
+                letture += 1;
+                if (letture === 2) {
+                    window.letturaNuovaFallita = true;
+                    throw new TypeError('Failed to fetch');
+                }
+                const risposta = await originale(indirizzo, opzioni);
+                if (letture > 2) return risposta;
+                const testo = await risposta.text();
+                window.letturaVecchiaPronta = true;
+                await new Promise((rilascia) => { window.rilasciaLaLetturaVecchia = rilascia; });
+                return new Response(testo, { status: risposta.status, headers: risposta.headers });
+            };
+        }"""
+    )
+    pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")  # la lettura vecchia
+    assert aspetta(lambda: pagina.evaluate("window.letturaVecchiaPronta === true"))
+    pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")  # la lettura nuova
+    assert aspetta(lambda: pagina.evaluate("window.letturaNuovaFallita === true"))
+    pagina.locator("#avviso").wait_for(state="visible")  # la nuova è fallita: per ora è vero
+    assert schermata(pagina, "in_attesa").is_visible()
+    pagina.evaluate("window.rilasciaLaLetturaVecchia()")
+    # Molto meno dei 20 secondi: altrimenti a salvare la prova sarebbe il controllo periodico.
+    schermata(pagina, "nuova_richiesta").wait_for(state="visible", timeout=3000)
+    assert pagina.locator("#avviso").is_hidden(), pagina.locator("#avviso").text_content()
+
+
 def test_salta_rimanda_l_invito(in_rete, pagina):
     in_rete.servizio.apri_giro(in_rete.gio)
     pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")

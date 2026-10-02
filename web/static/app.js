@@ -69,7 +69,8 @@ function avvisa(testo) {
 }
 
 // L'avviso di rete è vero solo finché il servizio non risponde: il primo
-// aggiornamento riuscito lo toglie, e lascia stare gli altri avvisi.
+// aggiornamento applicato lo toglie (non uno vecchio, scartato perché ne è già
+// arrivato uno più recente), e lascia stare gli altri avvisi.
 const AVVISO_RETE = 'Non riesco a raggiungere il servizio: riprovo tra poco.';
 // Descrive l'anteprima dove è comparso (come AVVISO_FOTO_FALLITA): su un'altra schermata non è più vero.
 const AVVISO_NON_PRONTA = 'La fotocamera non è ancora pronta: riprova.';
@@ -92,8 +93,10 @@ let letturaApplicata = 0;
 async function aggiorna() {
   const lettura = ++lettureAvviate;
   let stato;
+  let scartoNuovo;
   try {
     stato = await api('GET', '/api/stato');
+    scartoNuovo = Date.parse(stato.ora) - Date.now(); // un corpo vuoto lancia qui: è un guasto, come la rete
   } catch {
     if (lettura > letturaApplicata) avvisa(AVVISO_RETE);
     return;
@@ -101,7 +104,7 @@ async function aggiorna() {
   if (lettura < letturaApplicata) return;
   letturaApplicata = lettura;
   server = stato;
-  scarto = Date.parse(server.ora) - Date.now();
+  scarto = scartoNuovo;
   if ($('avviso').textContent === AVVISO_RETE) avvisa('');
   disegna();
 }
