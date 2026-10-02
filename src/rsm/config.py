@@ -108,17 +108,15 @@ def _motivi(env: Mapping[str, str]) -> tuple[Motivo, ...]:
 
 
 def _contatto(env: Mapping[str, str]) -> str:
-    """Il «sub» di VAPID: il servizio push di Apple rifiuta un contatto vuoto."""
+    """Il «sub» di VAPID. Le regole sono quelle di py_vapid, che firma: un contatto
+    che lui rifiuta (un https con un percorso, un dominio senza punto) farebbe
+    fallire ogni push, con il servizio acceso e /salute verde."""
     contatto = _testo(env, "RSM_VAPID_CONTATTO")
-    if contatto.startswith("mailto:"):
-        valido = re.fullmatch(r"[^@\s]+@[^@\s]+", contatto.removeprefix("mailto:")) is not None
-    elif contatto.startswith("https://"):
-        valido = len(contatto) > len("https://")
-    else:
-        valido = False
-    if not valido:
+    dominio = r"[\w-]+(\.[\w-]+)+"
+    if re.fullmatch(rf"mailto:[^@\s]+@{dominio}|https://{dominio}", contatto) is None:
         raise ConfigurazioneErrata(
-            "RSM_VAPID_CONTATTO deve essere mailto:<indirizzo con @> o https://<sito>"
+            "RSM_VAPID_CONTATTO deve essere mailto:<indirizzo> o https://<dominio>, "
+            "senza percorso (per esempio https://selfie.esempio.duckdns.org)"
         )
     return contatto
 

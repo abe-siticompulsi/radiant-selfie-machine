@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from py_vapid import Vapid01
 
 from rsm import config
 
@@ -62,19 +63,49 @@ def test_un_gruppo_non_numerico():
         config.da_ambiente({**AMBIENTE, "RSM_GRUPPO_PROVA": "gruppo"})
 
 
-@pytest.mark.parametrize(
-    "contatto", ["qualcuno@example.org", "mailto:", "mailto:qualcuno", "mailto:qualcuno@", "https://", "http://example.org"]
-)
+CONTATTI_SBAGLIATI = [
+    "qualcuno@example.org",
+    "mailto:",
+    "mailto:qualcuno",
+    "mailto:qualcuno@",
+    "mailto:qualcuno@example",
+    "https://",
+    "http://example.org",
+    "https://example.org/contatti",
+    "https://example.org/",
+    "https://github.com/abe-siticompulsi/radiant-selfie-machine",
+]
+CONTATTI_GIUSTI = [
+    "mailto:qualcuno@example.org",
+    "mailto:12345+qualcuno@users.noreply.github.com",
+    "https://example.org",
+    "https://selfie.esempio.duckdns.org",
+]
+
+
+@pytest.mark.parametrize("contatto", CONTATTI_SBAGLIATI)
 def test_il_contatto_vapid_deve_essere_un_indirizzo_vero(contatto):
-    """Il valore dell'esempio, «mailto:», non passa: il servizio push di Apple
-    rifiuta un «sub» non valido."""
+    """Il valore dell'esempio, «mailto:», non passa, e nemmeno un https con un
+    percorso: py_vapid lo rifiuta, e ogni push fallirebbe a servizio acceso."""
     with pytest.raises(config.ConfigurazioneErrata, match="RSM_VAPID_CONTATTO"):
         config.da_ambiente({**AMBIENTE, "RSM_VAPID_CONTATTO": contatto})
 
 
-@pytest.mark.parametrize("contatto", ["mailto:qualcuno@example.org", "https://example.org/contatti"])
+@pytest.mark.parametrize("contatto", CONTATTI_GIUSTI)
 def test_contatti_vapid_validi(contatto):
     assert config.da_ambiente({**AMBIENTE, "RSM_VAPID_CONTATTO": contatto}).vapid_contatto == contatto
+
+
+@pytest.mark.parametrize("contatto", CONTATTI_SBAGLIATI + CONTATTI_GIUSTI)
+def test_un_contatto_che_la_configurazione_accetta_lo_accetta_anche_py_vapid(contatto):
+    """Chi firma è py_vapid: la configurazione non deve mai essere più larga di lui."""
+    try:
+        config.da_ambiente({**AMBIENTE, "RSM_VAPID_CONTATTO": contatto})
+    except config.ConfigurazioneErrata:
+        return
+    vapid = Vapid01()
+    vapid.generate_keys()
+    vapid.sign({"sub": contatto, "aud": "https://updates.push.services.mozilla.com"})
 
 
 def test_il_rinvio_deve_durare_almeno_un_minuto():
