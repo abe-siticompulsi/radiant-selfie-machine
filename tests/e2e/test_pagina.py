@@ -143,15 +143,20 @@ def _consegna_un_push(pagina, origine, dati):
     )
 
 
-def test_all_arrivo_di_un_push_la_pagina_rilegge_subito_lo_stato(in_rete, pagina):
+@pytest.mark.parametrize("permesso", ["concesso", "mancante"])
+def test_all_arrivo_di_un_push_la_pagina_rilegge_subito_lo_stato(in_rete, pagina, permesso):
     """Alberto chiede un'altra foto: il servizio salva la decisione e manda il push.
-    La pagina aperta la mostra subito, non al controllo dei 20 secondi."""
-    pagina.context.grant_permissions(["notifications"])
+    La pagina aperta la mostra subito, non al controllo dei 20 secondi. Senza il
+    permesso delle notifiche (revocato, per esempio) la notifica non si può
+    mostrare, ma la pagina si aggiorna lo stesso: una cosa non ferma l'altra."""
+    if permesso == "concesso":
+        pagina.context.grant_permissions(["notifications"])
     in_rete.servizio.apri_giro(in_rete.gio)
     emi = in_rete.store.persona_da_impronta(gettoni.impronta(in_rete.emi))
     ricevuta = in_rete.servizio.ricevi_foto(emi, in_rete.store.ultimo_giro().id, jpeg())
     pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
     schermata(pagina, "in_attesa").wait_for(state="visible")
+    assert (pagina.evaluate("Notification.permission") == "granted") == (permesso == "concesso")
     in_rete.servizio.decidi(ricevuta.foto.giro_id, "emi", ricevuta.foto.versione, "da_rifare", "troppo buia")
     _consegna_un_push(
         pagina, in_rete.url, {"titolo": "Alberto chiede un'altra foto", "testo": "troppo buia"}
