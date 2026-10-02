@@ -419,6 +419,15 @@ async function registraServiceWorker() {
   }
 }
 
+// Il service worker avvisa all'arrivo di un push (sw.js): lo stato nuovo è già
+// salvato, e la pagina lo rilegge subito invece di aspettare i 20 secondi.
+function ascoltaIlServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.addEventListener('message', (evento) => {
+    if (evento.data?.tipo === 'push') aggiorna();
+  });
+}
+
 const pushPossibile = () => Boolean(registrazione) && 'PushManager' in window && 'Notification' in window;
 
 // Non rifiuta mai: un errore del browser lascia la sezione visibile, e il
@@ -520,6 +529,7 @@ function collega() {
 collega();
 $('etichetta-conto').textContent = `Conto alla rovescia (${SECONDI_CONTO} secondi)`;
 $('interruttore-conto').checked = leggiPreferenzaConto(archivioLocale());
+ascoltaIlServiceWorker();
 await registraServiceWorker();
 rimandaIscrizione(); // non aspetta: la pagina si disegna intanto, e la sezione sparisce alla conferma
 await aggiorna();

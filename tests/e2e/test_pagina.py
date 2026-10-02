@@ -120,6 +120,47 @@ def test_se_il_servizio_non_conferma_l_iscrizione_la_sezione_resta(in_rete, pagi
     assert pagina.locator("#notifiche").is_visible()
 
 
+def _consegna_un_push(pagina, origine, dati):
+    """Il push vero, consegnato al service worker dal protocollo di Chrome: è il
+    pulsante «Push» degli strumenti per sviluppatori. Chrome headless non ha un
+    servizio push, ma il service worker riceve l'evento come da un servizio vero.
+    Gli eventi del protocollo arrivano solo mentre Playwright lavora: per questo
+    si aspetta con wait_for_timeout, non con time.sleep."""
+    assert aspetta(lambda: pagina.evaluate("!!navigator.serviceWorker.controller"))
+    cdp = pagina.context.new_cdp_session(pagina)
+    registrazioni = []
+    cdp.on("ServiceWorker.workerRegistrationUpdated", lambda evento: registrazioni.extend(evento["registrations"]))
+    cdp.send("ServiceWorker.enable")
+    for _ in range(100):
+        nostre = [r for r in registrazioni if r["scopeURL"] == pagina.url and not r.get("isDeleted")]
+        if nostre:
+            break
+        pagina.wait_for_timeout(50)
+    assert nostre, f"nessuna registrazione del service worker per {pagina.url}: {registrazioni}"
+    cdp.send(
+        "ServiceWorker.deliverPushMessage",
+        {"origin": origine, "registrationId": nostre[0]["registrationId"], "data": json.dumps(dati)},
+    )
+
+
+def test_all_arrivo_di_un_push_la_pagina_rilegge_subito_lo_stato(in_rete, pagina):
+    """Alberto chiede un'altra foto: il servizio salva la decisione e manda il push.
+    La pagina aperta la mostra subito, non al controllo dei 20 secondi."""
+    pagina.context.grant_permissions(["notifications"])
+    in_rete.servizio.apri_giro(in_rete.gio)
+    emi = in_rete.store.persona_da_impronta(gettoni.impronta(in_rete.emi))
+    ricevuta = in_rete.servizio.ricevi_foto(emi, in_rete.store.ultimo_giro().id, jpeg())
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    schermata(pagina, "in_attesa").wait_for(state="visible")
+    in_rete.servizio.decidi(ricevuta.foto.giro_id, "emi", ricevuta.foto.versione, "da_rifare", "troppo buia")
+    _consegna_un_push(
+        pagina, in_rete.url, {"titolo": "Alberto chiede un'altra foto", "testo": "troppo buia"}
+    )
+    # Molto meno dei 20 secondi del controllo periodico, cominciato al caricamento.
+    schermata(pagina, "nuova_richiesta").wait_for(state="visible", timeout=3000)
+    assert "troppo buia" in pagina.locator("#motivo").inner_text()
+
+
 def test_salta_rimanda_l_invito(in_rete, pagina):
     in_rete.servizio.apri_giro(in_rete.gio)
     pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
