@@ -121,7 +121,16 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
 8. **Chiusura.** Un giro si chiude da solo 48 ore dopo l'apertura. «Apri il
    giro» con un giro aperto da meno di 12 ore non fa niente («Giro già aperto
    alle 22:10»); con uno più vecchio, lo chiude e ne apre uno nuovo. Due serate
-   non stanno mai a meno di 12 ore l'una dall'altra.
+   non stanno mai a meno di 12 ore l'una dall'altra, salvo una chiusura a mano.
+   Alberto può chiuderlo prima,
+   sul server, con `rsm giro chiudi`: per esempio il giro della prova generale,
+   se la serata vera cade a meno di 12 ore e «Apri il giro» lo riuserebbe, con
+   le foto di prova dentro. Il comando dice quale giro ha chiuso, chi l'aveva
+   aperto e quando (in UTC, come il servizio), oppure che non c'era un giro
+   aperto; un giro già chiuso o scaduto non lo tocca. Se nel frattempo l'ha
+   chiuso il servizio (un «Apri il giro» nello stesso istante), lo dice, non
+   afferma di averlo chiuso lui, e dice quale giro è aperto adesso (rilanciarlo
+   chiuderebbe quello).
 
 **Il selfie di Alberto** (`abe`) si scatta dalla stessa pagina, durante il
 giro, con la stessa anteprima e lo stesso «Invia» / «Rifai». Non passa dalla
@@ -152,7 +161,7 @@ Moduli piccoli, ognuno con un compito, come in `ctc`:
 | `push.py` | Invio Web Push con `pywebpush`; toglie le iscrizioni che il servizio push dichiara scadute (404/410). |
 | `pianificatore.py` | Un ciclo ogni 30 secondi: rinvii scaduti di chi non ha ancora una foto in attesa o accettata → push; giri scaduti → chiusi; foto di giri chiusi da più di 30 giorni → cancellate. |
 | `app.py` | Le rotte FastAPI, sottili: autenticano, chiamano `regole` e `store`, rispondono. |
-| `cli.py` | `rsm persona aggiungi <soprannome> --ruolo …`, `revoca`, `elenco`. |
+| `cli.py` | `rsm persona aggiungi <soprannome> --ruolo …`, `revoca`, `elenco`; `rsm giro chiudi`. |
 
 ### La pagina (`web/`)
 

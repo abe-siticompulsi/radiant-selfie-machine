@@ -1,8 +1,11 @@
 import base64
 import os
 import stat
+from datetime import UTC, datetime, timedelta
 
-from rsm import gettoni
+import pytest
+
+from rsm import gettoni, regole
 from rsm.cli import main
 from rsm.store import Iscrizione, Store
 
@@ -111,3 +114,98 @@ def test_vapid_non_sovrascrive(tmp_path):
     assert codice == 1
     assert "non sovrascrivo" in uscita
     assert percorso.read_text() == "già qui"
+
+
+ADESSO = datetime(2026, 10, 3, 20, 30, tzinfo=UTC)
+
+
+def chiudi(env):
+    righe = []
+    codice = main(["giro", "chiudi"], env=env, stampa=righe.append, adesso=lambda: ADESSO)
+    return codice, "\n".join(righe)
+
+
+def test_chiudere_il_giro_aperto_dice_quale_e_lo_chiude_adesso(tmp_path):
+    env = ambiente(tmp_path)
+    store = Store(env["RSM_DB"])
+    store.crea_schema()
+    giro = store.crea_giro(datetime(2026, 10, 3, 18, 5, tzinfo=UTC), "gio")
+    codice, uscita = chiudi(env)
+    assert codice == 0
+    assert uscita == f"giro {giro.id} chiuso: l'aveva aperto gio il 2026-10-03 alle 18:05 UTC"
+    chiuso = store.ultimo_giro()
+    assert chiuso.chiuso_alle == ADESSO
+    assert not regole.aperto(chiuso, ADESSO)
+
+
+def test_senza_giri_non_c_e_niente_da_chiudere(tmp_path):
+    codice, uscita = chiudi(ambiente(tmp_path))
+    assert (codice, uscita) == (0, "nessun giro aperto: niente da chiudere")
+
+
+def test_un_giro_scaduto_da_solo_non_si_tocca(tmp_path):
+    env = ambiente(tmp_path)
+    store = Store(env["RSM_DB"])
+    store.crea_schema()
+    store.crea_giro(ADESSO - regole.DURATA_GIRO - timedelta(minutes=1), "gio")
+    assert chiudi(env) == (0, "nessun giro aperto: niente da chiudere")
+    assert store.ultimo_giro().chiuso_alle is None  # la fine si calcola: niente da scrivere
+
+
+def test_alle_48_ore_esatte_il_giro_e_gia_scaduto(tmp_path):
+    env = ambiente(tmp_path)
+    store = Store(env["RSM_DB"])
+    store.crea_schema()
+    store.crea_giro(ADESSO - regole.DURATA_GIRO, "gio")
+    assert chiudi(env) == (0, "nessun giro aperto: niente da chiudere")
+    assert store.ultimo_giro().chiuso_alle is None
+
+
+def test_un_giro_gia_chiuso_non_si_tocca(tmp_path):
+    env = ambiente(tmp_path)
+    store = Store(env["RSM_DB"])
+    store.crea_schema()
+    giro = store.crea_giro(ADESSO - timedelta(hours=2), "abe")
+    store.chiudi_giro(giro.id, ADESSO - timedelta(hours=1))
+    assert chiudi(env) == (0, "nessun giro aperto: niente da chiudere")
+    assert store.ultimo_giro().chiuso_alle == ADESSO - timedelta(hours=1)
+
+
+@pytest.mark.parametrize("riapre", [True, False])
+@pytest.mark.parametrize("scarto", [timedelta(seconds=-1), timedelta(seconds=1)])
+def test_se_il_servizio_lo_chiude_nel_frattempo_il_comando_non_dice_di_averlo_chiuso(
+    tmp_path, monkeypatch, riapre, scarto
+):
+    """Fra la lettura e la scrittura del comando, un altro processo chiude il giro:
+    il servizio con «Apri il giro», che ne apre uno nuovo, o un secondo comando. Il
+    comando non ha chiuso niente: non dice «chiuso», e dice com'è lo stato adesso,
+    senza consigliare di rilanciarsi (chiuderebbe il giro nuovo, quello della serata).
+    L'altro può aver letto l'orologio un istante prima o dopo il comando (`scarto`):
+    in nessuno dei due casi il giro appena chiuso risulta aperto."""
+    env = ambiente(tmp_path)
+    store = Store(env["RSM_DB"])
+    store.crea_schema()
+    vecchio = store.crea_giro(ADESSO - timedelta(hours=20), "gio")
+    originale = Store.chiudi_giro
+
+    def chiuso_prima_da_altri(self, giro_id, alle):
+        originale(self, giro_id, alle + scarto)
+        if riapre:
+            Store.crea_giro(self, datetime(2026, 10, 3, 20, 29, tzinfo=UTC), "gio")
+        monkeypatch.setattr(Store, "chiudi_giro", originale)
+        return originale(self, giro_id, alle)  # la scrittura del comando, che non trova niente
+
+    monkeypatch.setattr(Store, "chiudi_giro", chiuso_prima_da_altri)
+    codice, uscita = chiudi(env)
+    assert codice == 1
+    gia_detto = f"il giro {vecchio.id} è stato chiuso nel frattempo da altri, non da questo comando."
+    if riapre:
+        nuovo = store.ultimo_giro()
+        assert uscita == (
+            f"{gia_detto} Adesso è aperto il giro {nuovo.id}, l'ha aperto gio il 2026-10-03 alle 20:29 UTC: "
+            "rilanciare il comando chiuderebbe questo."
+        )
+        assert regole.aperto(nuovo, ADESSO)  # il giro della serata resta aperto
+    else:
+        assert uscita == f"{gia_detto} Adesso non c'è un giro aperto."
+    assert store.giro(vecchio.id).chiuso_alle == ADESSO + scarto  # la chiusura degli altri non si sposta

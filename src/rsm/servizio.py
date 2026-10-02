@@ -134,6 +134,8 @@ class Servizio:
         self._ora = ora
         # Il servizio gira in un solo processo: basta un lucchetto perché due
         # «Apri il giro» premuti insieme non aprano due giri, con due annunci.
+        # `rsm giro chiudi` è un altro processo e non lo prende: chiude per id, e
+        # dice di aver chiuso solo se la sua scrittura ha avuto effetto.
         self._apertura = threading.Lock()
 
     # --- identità

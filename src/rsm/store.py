@@ -219,12 +219,15 @@ class Store:
             giro_id = cursore.lastrowid
         return Giro(id=giro_id, aperto_alle=datetime.fromisoformat(momento), aperto_da=aperto_da)
 
-    def chiudi_giro(self, giro_id: int, alle: datetime) -> None:
+    def chiudi_giro(self, giro_id: int, alle: datetime) -> bool:
+        """Vero se l'ha chiuso questa chiamata; falso se era già chiuso (una
+        chiusura non si sposta)."""
         with self._connessione() as c:
-            c.execute(
+            cursore = c.execute(
                 "UPDATE giri SET chiuso_alle = ? WHERE id = ? AND chiuso_alle IS NULL",
                 (_iso(alle), giro_id),
             )
+        return cursore.rowcount == 1
 
     def giri_dal(self, dal: datetime) -> list[Giro]:
         with self._connessione() as c:

@@ -55,8 +55,8 @@ def test_giri_crea_leggi_chiudi(store):
     assert store.ultimo_giro() == g2
     assert store.giro(g1.id) == g1
     assert store.giro(999) is None
-    store.chiudi_giro(g1.id, T0 + timedelta(hours=1))
-    store.chiudi_giro(g1.id, T0 + timedelta(hours=5))  # una chiusura non si sposta
+    assert store.chiudi_giro(g1.id, T0 + timedelta(hours=1)) is True
+    assert store.chiudi_giro(g1.id, T0 + timedelta(hours=5)) is False  # una chiusura non si sposta
     assert store.giro(g1.id).chiuso_alle == T0 + timedelta(hours=1)
 
 

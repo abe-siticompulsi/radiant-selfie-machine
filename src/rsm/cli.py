@@ -1,4 +1,4 @@
-"""`rsm`: le persone del servizio e la chiave del push, dalla riga di comando.
+"""`rsm`: le persone del servizio, il giro e la chiave del push, dalla riga di comando.
 
 Si lancia dentro il container:
 
@@ -15,6 +15,7 @@ import argparse
 import os
 import sqlite3
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
 from py_vapid import Vapid
@@ -38,6 +39,10 @@ def _parser() -> argparse.ArgumentParser:
     rimuovi = azioni.add_parser("rimuovi", help="toglie una persona e le sue iscrizioni push")
     rimuovi.add_argument("soprannome")
     azioni.add_parser("elenco", help="elenca le persone")
+
+    giro = comandi.add_parser("giro", help="il giro dei selfie")
+    azioni_giro = giro.add_subparsers(dest="azione", required=True)
+    azioni_giro.add_parser("chiudi", help="chiude subito il giro aperto")
 
     vapid = comandi.add_parser("vapid", help="la chiave del push")
     azioni_vapid = vapid.add_subparsers(dest="azione", required=True)
@@ -94,6 +99,44 @@ def _persona(args: argparse.Namespace, env: Mapping[str, str], stampa: Callable)
     return 0
 
 
+def _chi_e_quando(giro: regole.Giro) -> str:
+    aperto = giro.aperto_alle.astimezone(UTC)
+    return f"{giro.aperto_da} il {aperto:%Y-%m-%d} alle {aperto:%H:%M} UTC"
+
+
+def _giro(env: Mapping[str, str], stampa: Callable, adesso: Callable[[], datetime]) -> int:
+    """Chiude subito il giro aperto, per esempio quello della prova generale se la
+    serata vera cade a meno di 12 ore: «Apri il giro» lo riuserebbe. Un giro già
+    chiuso, o scaduto da solo dopo 48 ore, non si tocca. L'ora è in UTC, come nel
+    servizio: è quella che il servizio ha registrato."""
+    store = Store(config.percorso_db(env))
+    store.crea_schema()
+    ora = adesso()
+    ultimo = store.ultimo_giro()
+    if ultimo is None or not regole.aperto(ultimo, ora):
+        stampa("nessun giro aperto: niente da chiudere")
+        return 0
+    if not store.chiudi_giro(ultimo.id, ora):
+        # Il servizio è un altro processo: fra la lettura e la scrittura «Apri il
+        # giro» può averlo chiuso, e aperto il giro della serata. Il comando non l'ha
+        # chiuso, e non consiglia di rilanciarsi: chiuderebbe quello nuovo. Dice
+        # com'è lo stato adesso, riletto. Il giro N è chiuso di sicuro (la scrittura
+        # non ha trovato niente), anche se l'altro ha letto l'orologio un istante dopo
+        # di noi; un giro più nuovo si giudica con l'ora di adesso, non con quella vecchia.
+        gia_detto = f"il giro {ultimo.id} è stato chiuso nel frattempo da altri, non da questo comando."
+        ora_aperto = store.ultimo_giro()
+        if ora_aperto is not None and ora_aperto.id != ultimo.id and regole.aperto(ora_aperto, adesso()):
+            stampa(
+                f"{gia_detto} Adesso è aperto il giro {ora_aperto.id}, l'ha aperto {_chi_e_quando(ora_aperto)}: "
+                "rilanciare il comando chiuderebbe questo."
+            )
+        else:
+            stampa(f"{gia_detto} Adesso non c'è un giro aperto.")
+        return 1
+    stampa(f"giro {ultimo.id} chiuso: l'aveva aperto {_chi_e_quando(ultimo)}")
+    return 0
+
+
 def _vapid(args: argparse.Namespace, stampa: Callable) -> int:
     percorso: Path = args.percorso
     chiave = Vapid()
@@ -114,12 +157,15 @@ def main(
     *,
     env: Mapping[str, str] | None = None,
     stampa: Callable = print,
+    adesso: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
     env = os.environ if env is None else env
     args = _parser().parse_args(argv)
     try:
         if args.comando == "persona":
             return _persona(args, env, stampa)
+        if args.comando == "giro":
+            return _giro(env, stampa, adesso)
         return _vapid(args, stampa)
     except (config.ConfigurazioneErrata, regole.RegolaViolata) as e:
         stampa(f"errore: {e}")

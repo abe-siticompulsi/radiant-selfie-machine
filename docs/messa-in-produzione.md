@@ -229,6 +229,19 @@ La prova generale: tu e un giocatore, con la sicura inserita. Apri il giro, lui
 scatta, tu validi dal bot, e chiedi un'altra foto almeno una volta con un
 motivo.
 
+Se la serata vera cade a meno di 12 ore dall'apertura del giro di prova,
+chiudilo: «Apri il giro» lo riuserebbe, con le foto di prova dentro (e una foto
+accettata è definitiva).
+
+```bash
+docker compose exec rsm rsm giro chiudi
+```
+
+Dice quale giro ha chiuso e chi l'aveva aperto, oppure che non c'era un giro
+aperto. Le pagine mostrano «Nessun giro aperto» alla prossima rilettura. Se
+proprio in quell'istante qualcuno ha premuto «Apri il giro», il comando lo dice e
+dice quale giro è aperto adesso: non rilanciarlo, chiuderebbe il giro della serata.
+
 ## 9. Armare la sicura
 
 Solo dopo la prova generale: scrivi l'identificativo del party in `RSM_GRUPPO`
