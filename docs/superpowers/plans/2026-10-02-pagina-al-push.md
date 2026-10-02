@@ -219,3 +219,14 @@ git commit -m "page: re-read the state as soon as a push arrives
 
 Co-Authored-By: <il modello che fa il commit> <noreply@anthropic.com>"
 ```
+
+## Aggiunta durante l'esecuzione
+
+La revisione del Task 1 ha notato che `aggiorna()` applicava ogni risposta, anche una
+arrivata dopo una più recente: con il push le letture si sovrappongono più spesso, e
+una lettura lenta partita prima della decisione poteva riportare la pagina allo stato
+vecchio fino al controllo seguente. Ora una risposta vale solo se la lettura è partita
+dopo quella già applicata, e l'errore di una lettura vecchia non mostra l'avviso di
+rete. Prova: `test_una_lettura_vecchia_che_arriva_tardi_non_riporta_indietro_la_pagina`
+(due varianti, «risponde» e «fallisce»), RED prima della correzione, e una mutazione
+per ciascuna delle due condizioni.

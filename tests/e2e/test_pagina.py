@@ -161,6 +161,49 @@ def test_all_arrivo_di_un_push_la_pagina_rilegge_subito_lo_stato(in_rete, pagina
     assert "troppo buia" in pagina.locator("#motivo").inner_text()
 
 
+@pytest.mark.parametrize("esito", ["risponde", "fallisce"])
+def test_una_lettura_vecchia_che_arriva_tardi_non_riporta_indietro_la_pagina(in_rete, pagina, esito):
+    """Le letture dello stato si sovrappongono (controllo dei 20 secondi, ritorno in
+    primo piano, push). Una lettura partita prima della decisione, e lenta, finisce
+    dopo quella partita dopo: la pagina resta sullo stato più recente. Se la lettura
+    vecchia fallisce, non dice che il servizio non risponde: ha appena risposto."""
+    in_rete.servizio.apri_giro(in_rete.gio)
+    emi = in_rete.store.persona_da_impronta(gettoni.impronta(in_rete.emi))
+    ricevuta = in_rete.servizio.ricevi_foto(emi, in_rete.store.ultimo_giro().id, jpeg())
+    pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")
+    schermata(pagina, "in_attesa").wait_for(state="visible")
+    # La prossima lettura dello stato legge subito il servizio (la foto è ancora in
+    # attesa), ma la pagina ne riceve la risposta solo al rilascio.
+    pagina.evaluate(
+        """(esito) => {
+            const originale = window.fetch;
+            let trattenute = 0;
+            window.fetch = async (indirizzo, opzioni) => {
+                const risposta = await originale(indirizzo, opzioni);
+                if (!String(indirizzo).includes('/api/stato') || trattenute++ > 0) return risposta;
+                const testo = await risposta.text();
+                window.letturaVecchiaPronta = true;
+                await new Promise((rilascia) => { window.rilasciaLaLetturaVecchia = rilascia; });
+                window.letturaVecchiaConsegnata = true;
+                if (esito === 'fallisce') throw new TypeError('Failed to fetch');
+                return new Response(testo, { status: risposta.status, headers: risposta.headers });
+            };
+        }""",
+        esito,
+    )
+    pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")  # la lettura vecchia
+    assert aspetta(lambda: pagina.evaluate("window.letturaVecchiaPronta === true"))
+    in_rete.servizio.decidi(ricevuta.foto.giro_id, "emi", ricevuta.foto.versione, "da_rifare", "troppo buia")
+    pagina.evaluate("document.dispatchEvent(new Event('visibilitychange'))")  # la lettura nuova
+    schermata(pagina, "nuova_richiesta").wait_for(state="visible")
+    pagina.evaluate("window.rilasciaLaLetturaVecchia()")
+    assert aspetta(lambda: pagina.evaluate("window.letturaVecchiaConsegnata === true"))
+    pagina.wait_for_timeout(300)  # il tempo di applicarla, o di avvisare, se la pagina lo facesse
+    assert schermata(pagina, "nuova_richiesta").is_visible()
+    assert not schermata(pagina, "in_attesa").is_visible()
+    assert pagina.locator("#avviso").is_hidden(), pagina.locator("#avviso").text_content()
+
+
 def test_salta_rimanda_l_invito(in_rete, pagina):
     in_rete.servizio.apri_giro(in_rete.gio)
     pagina.goto(f"{in_rete.url}/p/{in_rete.emi}/")

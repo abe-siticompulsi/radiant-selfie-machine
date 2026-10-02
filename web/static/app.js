@@ -82,14 +82,26 @@ const AVVISI_DELL_ANTEPRIMA = [AVVISO_NON_PRONTA, AVVISO_FOTO_FALLITA];
 // persona ne comincia una nuova.
 const AVVISO_FOTO_PERSA = 'Il giro di questa foto si è chiuso: non si può più mandare.';
 
+// Le letture dello stato si sovrappongono (il controllo dei 20 secondi, il ritorno in
+// primo piano, il push): una risposta vale solo se la lettura è partita dopo quella
+// già applicata. Una risposta lenta e vecchia non riporta indietro la pagina, e un
+// suo errore non dice che il servizio non risponde quando una più recente ha risposto.
+let lettureAvviate = 0;
+let letturaApplicata = 0;
+
 async function aggiorna() {
+  const lettura = ++lettureAvviate;
+  let stato;
   try {
-    server = await api('GET', '/api/stato');
-    scarto = Date.parse(server.ora) - Date.now();
+    stato = await api('GET', '/api/stato');
   } catch {
-    avvisa(AVVISO_RETE);
+    if (lettura > letturaApplicata) avvisa(AVVISO_RETE);
     return;
   }
+  if (lettura < letturaApplicata) return;
+  letturaApplicata = lettura;
+  server = stato;
+  scarto = Date.parse(server.ora) - Date.now();
   if ($('avviso').textContent === AVVISO_RETE) avvisa('');
   disegna();
 }
