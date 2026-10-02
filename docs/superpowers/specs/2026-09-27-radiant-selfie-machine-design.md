@@ -54,7 +54,12 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
    master e Alberto — tranne chi ha aperto il giro, che la pagina ce l'ha già
    davanti.
 2. **Invito.** La pagina aperta controlla lo stato ogni 20 secondi e mostra
-   l'invito da sola; chiusa, lo mostra quando si tocca la notifica.
+   l'invito da sola; chiusa, lo mostra quando si tocca la notifica. Se sul
+   dispositivo le notifiche sono attive, all'arrivo di un push la pagina
+   aperta rilegge subito lo stato, senza aspettare i 20 secondi: vale per ogni
+   push (invito, rinvio scaduto, foto accettata, richiesta di un'altra foto).
+   La notifica compare comunque, anche con la pagina davanti: Chrome e Safari
+   chiedono che ogni push ne mostri una.
 3. **Scatto.** Anteprima della webcam con «Scatta» e «Salta». Dopo lo scatto la
    foto si rivede: «Invia» o «Rifai».
    **Conto alla rovescia, facoltativo.** Nell'anteprima un interruttore
@@ -161,8 +166,9 @@ HTML, CSS e JavaScript senza framework e senza build.
 - `app.js` — `getUserMedia`, scatto su canvas, JPEG, invio, polling, pulsante
   «Attiva le notifiche» (il permesso va chiesto da un gesto dell'utente:
   Safari lo impone).
-- `sw.js` — il service worker: riceve il push, mostra la notifica, al tocco
-  apre o porta in primo piano la pagina personale.
+- `sw.js` — il service worker: riceve il push, mostra la notifica, avvisa la
+  pagina personale se è aperta (che rilegge lo stato), al tocco apre o porta in
+  primo piano la pagina personale.
 - La pagina sta in `/p/<gettone>/`, con la barra finale. Il manifest è **per
   persona** (`/p/<gettone>/manifest.webmanifest`, con `start_url` e `scope` =
   `/p/<gettone>/`), perché l'app installata deve ripartire dal suo link (§6). Il
@@ -395,7 +401,7 @@ Un modulo nuovo, `giro.py`: il client HTTP del servizio (timeout 5 secondi),
 | Rinvio di «Salta» (`RSM_RINVIO_MINUTI`) | 10 minuti | servizio |
 | Durata di un giro | 48 ore | servizio |
 | Soglia sotto cui «Apri il giro» non riapre | 12 ore | servizio |
-| Polling della pagina | 20 secondi | pagina |
+| Polling della pagina (rete di sicurezza: con le notifiche attive rilegge all'arrivo del push) | 20 secondi | pagina |
 | Conto alla rovescia prima dello scatto (facoltativo) | 3 secondi, spento di partenza | pagina |
 | Pausa dopo «Ferma», in cui «Scatta la foto» non risponde | 500 ms | pagina |
 | Tentativi automatici di invio | 3 | pagina |
