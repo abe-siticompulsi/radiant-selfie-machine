@@ -27,6 +27,6 @@ e dove vengono verificate, stanno in `docs/differenze-fra-test-e-realta.md`.
 
 ## In produzione
 
-Sulla macchina di Nextcloud, in Docker, dietro Nginx:
+Sulla macchina di Nextcloud, in Docker, dietro Nginx Proxy Manager o Nginx:
 `docs/messa-in-produzione.md`. Finché `RSM_GRUPPO` è vuoto, il bot annuncia il
 giro nel gruppo di prova.
