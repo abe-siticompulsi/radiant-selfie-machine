@@ -39,7 +39,7 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
 | **Telegram resta come ripiego** | Chi non usa la pagina manda la foto nel gruppo; `ctc` legge entrambe le fonti. |
 | **Invito: messaggio nel gruppo e Web Push** | Il messaggio nel gruppo arriva a tutti; il push porta alla pagina anche chiusa, rende vero il rinvio di «Salta» sul telefono e raggiunge un solo giocatore per la richiesta di un'altra foto. La consegna push non è garantita, per questo il gruppo resta. |
 | **Alberto valida ogni foto** («Va bene» / «Chiedi un'altra foto») | Richiesta di Alberto. Solo una foto validata è definitiva. |
-| **Chi rifiuta una foto può dirne il motivo**, e il motivo accompagna la richiesta di un'altra foto e il sollecito | Richiesta di Alberto: chi deve rifare la foto sa cosa cambiare. Per lo stesso principio il sollecito dice anche quando il servizio non rispondeva. |
+| **Chi rifiuta una foto può dirne il motivo**, e il motivo accompagna la richiesta di un'altra foto e il sollecito | Richiesta di Alberto: chi deve rifare la foto sa cosa cambiare. Per lo stesso principio il sollecito dice anche quando `ctc` non è riuscito a leggere la pagina. |
 | **Anche Alberto scatta dalla pagina**, durante il giro | Richiesta di Alberto: con la pagina ha anteprima e conferma, che la webcam di `ctc tonight` non gli dà. La webcam resta il ripiego. |
 | **Servizio sulla macchina di Nextcloud** (AIO, x86_64, dietro il Nginx di Alberto) | Già raggiungibile in HTTPS; `selfie.esempio.duckdns.org` risolve già al suo IP. |
 | **Python + FastAPI + SQLite**, in Docker | Stessi strumenti di `ctc` (uv, pytest, ruff). |
@@ -113,8 +113,6 @@ Il criterio di successo di `ctc` non cambia: Alberto va a letto subito.
    «tagliata (controlla che tutta la testa sia ben visibile nella foto)». Una
    foto accettata è definitiva: la pagina mostra «La tua foto è stata accettata»,
    non offre più «Rifai», e al giocatore arriva un push con lo stesso testo.
-   Se il sollecito gli aveva promesso una conferma, arriva anche un messaggio
-   privato (§10.10).
 6. **Fuori da un giro** la pagina mostra «Nessun giro aperto» e non accende la
    fotocamera.
 7. **Raccolta.** `ctc` lega il giro alla sessione e scarica le foto (§10).
@@ -312,9 +310,13 @@ Un modulo nuovo, `giro.py`: il client HTTP del servizio (timeout 5 secondi),
 **senza politica**, come `telegram_user.py`. La politica sta dove sta oggi.
 
 1. **Fase 1, dopo la creazione di `Miniatura/` e prima dello scatto dalla
-   webcam.** Cerca il giro di stasera: il
-   più recente aperto **non prima di un'ora** prima dell'inizio della
-   registrazione (un'ora esatta compresa) e non legato a un'altra sessione.
+   webcam.** Cerca il giro di stasera: quello già legato a questa sessione,
+   se il servizio ne conosce uno (lo stato di `ctc` può essersi perso);
+   altrimenti il più recente libero aperto fra **un'ora prima** dell'inizio
+   della registrazione (un'ora esatta compresa) e **dodici ore dopo**. Il
+   limite delle dodici ore viene dalla §3.8 (due serate non stanno mai a meno
+   di 12 ore) e impedisce che un `ctc resume` su una serata vecchia si prenda
+   il giro di stasera.
    L'inizio è `recording_started_at`, ricavato dal nome del file di OBS come per
    la finestra di Telegram; è un'ora locale ingenua, da convertire prima del
    confronto come fa `craig.py`. Lo lega alla sessione e registra l'id nello
@@ -345,63 +347,50 @@ Un modulo nuovo, `giro.py`: il client HTTP del servizio (timeout 5 secondi),
    Telegram riprendono dal giro legato le foto accettate che in `Miniatura/` non
    ci sono ancora (`selfies.gia_presente`), senza chiedere al servizio cosa è
    già stato consegnato.
-   Una foto ancora in attesa alla scadenza della conferma conta come non
-   ricevuta: la persona viene sollecitata, come oggi.
+   Una foto della pagina in attesa di validazione non ha scadenza: chi l'ha
+   mandata ha fatto la sua parte, e non viene sollecitato, né di notte né al
+   mattino. Le foto Telegram in attesa di un tocco restano incerte, con la
+   formula dubitativa, come oggi. Al mattino `solleciti-in-sospeso` non
+   sollecita da solo: chiede ad Alberto dal bot di `ctc` («📣 Manda il
+   sollecito» / «🤫 Lascia stare») e compone il sollecito al tocco. Il
+   dettaglio sta nella spec di `ctc`
+   (`docs/superpowers/specs/2026-10-03-selfie-dalla-pagina-design.md`, §2).
 7. **Nessun giro stasera** → solo Telegram, e il report lo dice.
 8. **Servizio irraggiungibile** → la fase 1 annota e va avanti; la fase 2
-   riprova mentre aspetta Craig, legame del giro compreso; se al momento dei solleciti è ancora giù, i
+   riprova dopo aver trovato Craig, tre volte a 20 secondi l'una dall'altra,
+   legame del giro compreso; se al momento dei solleciti è ancora giù, i
    solleciti partono comunque (un sollecito di troppo si corregge da solo, uno
    mancato costa il selfie), il sollecito stesso lo dice (§10.9) e il report
-   avverte che qualcuno può essere stato sollecitato per niente.
+   avverte che qualcuno può essere stato sollecitato per niente. Vale per ogni
+   lettura non riuscita, anche quando il servizio risponde con un rifiuto
+   (404) o un conflitto (409).
 9. **Il sollecito dice perché.** I testi a rotazione di oggi restano; sotto,
-   una riga per ogni persona sollecitata che ha un motivo, e una riga sola se il
-   servizio non rispondeva. I tre casi:
+   una riga per ogni persona sollecitata che ha un motivo, e una riga sola se
+   `ctc` non è riuscito a leggere la pagina. I due casi:
    - foto rifiutata con un motivo: «Per emi la foto non andava: troppo buia.»;
-   - foto dalla pagina rimasta senza validazione alla scadenza della conferma:
-     «Per emi c'è una foto dalla pagina che non ho ancora guardato: vi do
-     conferma.» La conferma arriva in privato (§10.10), non nel gruppo;
-   - servizio irraggiungibile: «La pagina dei selfie non rispondeva: chi ha già
-     scattato da lì non deve rifarlo.»
-   Vale anche per le foto Telegram che Alberto rifiuta in `ctc`, a video o dal
-   bot di `ctc`: stesso motivo facoltativo, stessa riga, ma **solo per l'ultima
+   - pagina non letta: «Non sono riuscito a leggere la pagina dei selfie: chi
+     ha già scattato da lì non deve rifarlo.»
+   Vale anche per le foto Telegram che Alberto rifiuta in `ctc` a video (fase 1
+   e `fix-selfies`): stesso motivo facoltativo, stessa riga, ma **solo per l'ultima
    foto** di quella persona nella finestra. Se Alberto scarta una foto e ce n'è
    una più recente, la prima può essere semplicemente la foto sbagliata, e non
    c'è niente da spiegare. Con più foto e «nessuna», il motivo riguarda
    l'ultima. Sulla pagina il problema non esiste: ogni persona ha una sola foto
    corrente. Il motivo si legge nel gruppo del party, quindi lo leggono tutti:
-   i motivi predefiniti sono neutri di proposito.
-10. **La conferma promessa si mantiene, in privato.** Chi ha avuto la riga
-    «vi do conferma» finisce, nello stato della sessione, fra le conferme
-    promesse. A ogni passata, `solleciti-in-sospeso` chiede al servizio lo
-    stato di quelle foto — la stessa chiamata con cui già raccoglie le foto
-    accettate (§10.6) — e appena una è validata scrive alla persona in privato,
-    con l'account di Alberto, via Telethon:
-    - accettata: «Ciao emi, la tua foto va bene, grazie! 📸»;
-    - da rifare: «Ciao emi, la tua foto non andava: troppo buia. Me ne mandi
-      un'altra? 📸» (senza motivo: «…la tua foto non andava. Me ne mandi
-      un'altra? 📸»). Senza «dalla pagina»: può rimandarla anche su Telegram.
-    Una volta sola: la promessa si segna come mantenuta nello stato. Vale la
-    sicura di `CTC_SOLLECITI`: finché non è armata, il testo va ad Alberto in
-    anteprima. Una promessa ancora aperta quando le foto del giro vengono
-    cancellate (30 giorni) cade, e il registro lo dice.
-    - `telegram_user.py` ha oggi solo `manda_nel_gruppo`: si aggiunge
-      `manda_a_persona`. Per scrivere a un identificativo numerico Telethon
-      deve aver già incontrato quella persona — di solito perché legge i
-      gruppi dove c'è: una convinzione da verificare nel piano reale, non da
-      scrivere in un finto.
-    - **Il LaunchAgent gira ogni 30 minuti**, oltre che al login, invece che
-      solo alle 8:30: altrimenti una foto validata alle 9 aspetterebbe il
-      prossimo avvio o il mattino dopo. Resta muto quando non c'è niente da
-      fare, e **senza niente in sospeso esce prima di collegarsi** a Telegram
-      o al servizio.
+   i motivi predefiniti sono neutri di proposito. Il bot di `ctc` rifiuta solo
+   con «🚫 Non è lui», che riguarda l'identità: un motivo come «troppo buia»
+   arriverebbe alla persona sbagliata.
+10. **Nessuna conferma promessa.** (Tolta il 2026-10-03.) Il sollecito non
+    promette più «vi do conferma», quindi non c'è niente da mantenere: niente
+    conferme promesse nello stato, niente messaggio privato via Telethon,
+    niente `manda_a_persona`. Il LaunchAgent resta alle 8:30 e al login.
 11. **Il report** dice da dove viene ogni selfie (pagina, Telegram o webcam) e
     riporta i motivi dei rifiuti.
 12. **`ctc doctor`** verifica che il servizio risponda, che il gettone admin sia
     valido, e segnala chi è nel roster ma non sul servizio e chi è sul servizio
     ma non nel roster. `abe` c'è da entrambe le parti: sul servizio come admin.
 13. **Piano reale:** `tests/reale/test_giro.py` contro il servizio vero, con un
-    gettone e una persona di prova; e il messaggio privato di Telethon verso una
-    persona di prova incontrata solo in un gruppo.
+    gettone e una persona di prova.
 
 ## 11. Parametri
 
@@ -418,11 +407,13 @@ Un modulo nuovo, `giro.py`: il client HTTP del servizio (timeout 5 secondi),
 | Cancellazione delle foto | 30 giorni dopo la chiusura del giro | servizio |
 | Ciclo del pianificatore | 30 secondi | servizio |
 | TTL dei push: invito e rinvio / esito della validazione | 30 minuti / 12 ore | servizio |
-| Cuscinetto prima della registrazione | 1 ora, compresa | `ctc` |
+| Finestra del giro di stasera (libero) | da 1 ora prima, compresa, a 12 ore dopo l'inizio della registrazione | `ctc` |
 | Timeout verso il servizio | 5 secondi | `ctc` |
 | Motivi predefiniti del rifiuto (`RSM_MOTIVI`), ciascuno con etichetta e testo | «Sfocata», «Troppo buia», «Viso non inquadrato», «Tagliata» → «tagliata (controlla che tutta la testa sia ben visibile nella foto)» | servizio, e `ctc` per le foto Telegram |
 | Lunghezza massima di un motivo | 200 caratteri | servizio e `ctc` |
-| Frequenza del LaunchAgent di `solleciti-in-sospeso` | ogni 30 minuti, e al login | `ctc` |
+| Tentativi della fase 2 verso il servizio | 3, a 20 secondi | `ctc` |
+| Attesa del tocco di Alberto, al mattino | 45 minuti | `ctc` |
+| Ora da cui l'agente chiede | 7:00 del giorno dopo la serata | `ctc` |
 
 ## 12. Fuori perimetro
 
